@@ -327,6 +327,8 @@
     $('#sheetTitle').textContent = s.n || ('Остановка ' + uid);
     $('#sheetSub').textContent = (s.c ? 'Код ' + s.c + ' · ' : '') + 'линии: ' + (s.l || []).join(', ');
     $('#sheetBody').innerHTML = '<div class="empty">Спрашиваю nsmart…</div>';
+    $('#sheetBody').scrollTop = 0;
+    $('#sheet').inert = false;
     $('#sheet').classList.add('open');
     $('#sheet').setAttribute('aria-hidden', 'false');
     loadStop(uid);
@@ -359,6 +361,10 @@
     sheetStop = null;
     $('#screen-map').classList.remove('has-stop');
     $('#sheet').classList.remove('open');
+    $('#sheet').classList.remove('dragging');
+    $('#sheet').style.transform = '';
+    if ($('#sheet').contains(document.activeElement)) document.activeElement.blur();
+    $('#sheet').inert = true;
     $('#sheet').setAttribute('aria-hidden', 'true');
   }
 
@@ -532,8 +538,62 @@
     new ResizeObserver(measure).observe(card);
     settle(false);
   }
+  function wireStopSheet() {
+    const sheet = $('#sheet'), body = $('#sheetBody');
+    let drag = null;
+    function begin(x, y, target) {
+      if (!sheet.classList.contains('open') || target.closest('button, a, input, select')) return false;
+      const header = !!target.closest('.sheet-head, .sheet-drag-handle');
+      if (!header && (!body.contains(target) || body.scrollTop > 1)) return false;
+      drag = { x: x, y: y, at: performance.now(), header: header, moved: false, dy: 0 };
+      return true;
+    }
+    function move(x, y) {
+      if (!drag || !sheet.classList.contains('open')) { drag = null; return false; }
+      const dy = y - drag.y, dx = Math.abs(x - drag.x);
+      if (!drag.moved) {
+        // Let an upward or horizontal gesture in the list remain native scrolling.
+        if (!drag.header && (dy < -5 || dx > Math.max(8, Math.abs(dy)))) { drag = null; return false; }
+        if (Math.abs(dy) < 6) return false;
+        drag.moved = true;
+      }
+      drag.dy = Math.max(0, dy);
+      sheet.classList.add('dragging');
+      sheet.style.transform = 'translateY(' + drag.dy + 'px)';
+      return true;
+    }
+    function end(cancelled) {
+      if (!drag) return;
+      const d = drag; drag = null;
+      const velocity = d.dy / Math.max(1, performance.now() - d.at);
+      const dismiss = !cancelled && d.moved && (d.dy > Math.min(100, sheet.offsetHeight * .22) || (d.dy > 28 && velocity > .55));
+      sheet.classList.remove('dragging'); sheet.style.transform = '';
+      if (dismiss) closeSheet();
+    }
+    // A non-passive touchmove can hand a downward pull at scrollTop=0 to the
+    // sheet while preserving ordinary native list scrolling in both directions.
+    sheet.addEventListener('touchstart', function (e) {
+      if (e.touches.length !== 1) { end(true); return; }
+      begin(e.touches[0].clientX, e.touches[0].clientY, e.target);
+    }, { passive: true });
+    sheet.addEventListener('touchmove', function (e) {
+      if (e.touches.length !== 1) { end(true); return; }
+      if (move(e.touches[0].clientX, e.touches[0].clientY) && e.cancelable) e.preventDefault();
+    }, { passive: false });
+    sheet.addEventListener('touchend', function () { end(false); });
+    sheet.addEventListener('touchcancel', function () { end(true); });
+    sheet.addEventListener('pointerdown', function (e) {
+      if (e.pointerType === 'touch' || !e.isPrimary || e.button !== 0) return;
+      if (begin(e.clientX, e.clientY, e.target)) sheet.setPointerCapture(e.pointerId);
+    });
+    sheet.addEventListener('pointermove', function (e) { if (e.pointerType !== 'touch') move(e.clientX, e.clientY); });
+    sheet.addEventListener('pointerup', function (e) { if (e.pointerType !== 'touch') end(false); });
+    sheet.addEventListener('pointercancel', function (e) { if (e.pointerType !== 'touch') end(true); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && sheetStop) closeSheet(); });
+  }
   function wire() {
     wirePanel();
+    wireStopSheet();
     $('#menuBtn').onclick = function () { openDrawer(!$('#drawer').classList.contains('open')); };
     $('#scrim').onclick = function () { openDrawer(false); };
     document.querySelectorAll('.nav-item, .bottom-item').forEach(function (b) {

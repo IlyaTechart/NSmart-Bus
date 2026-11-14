@@ -114,8 +114,8 @@
   <button class="bottom-item" data-screen="timetable"><span><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>Расписание</button>
 </nav>
 
-<div class="sheet" id="sheet" aria-hidden="true">
-  <div class="sheet-grip"></div>
+<div class="sheet" id="sheet" role="dialog" aria-labelledby="sheetTitle" aria-hidden="true" inert>
+  <div class="sheet-drag-handle"><div class="sheet-grip"></div></div>
   <div class="sheet-head">
     <div>
       <div class="sheet-title" id="sheetTitle">Остановка</div>
@@ -124,7 +124,7 @@
     <button class="icon-btn small" id="sheetRefresh" aria-label="Обновить">
       <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg>
     </button>
-    <button class="icon-btn small" id="sheetClose" aria-label="Закрыть">✕</button>
+    <button class="icon-btn small" id="sheetClose" aria-label="Закрыть расписание остановки"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
   </div>
   <div class="sheet-body" id="sheetBody"></div>
 </div>
