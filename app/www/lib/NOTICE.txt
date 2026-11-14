@@ -9,3 +9,7 @@ The River map style is derived from the OpenFreeMap Positron style:
 https://tiles.openfreemap.org/styles/positron
 Map tiles: OpenFreeMap / OpenMapTiles, data copyright OpenStreetMap contributors.
 Map attribution is displayed in the map and links to the providers.
+
+The bundled local road graph is derived from OpenFreeMap / OpenMapTiles vector
+tiles, data copyright OpenStreetMap contributors, licensed under ODbL 1.0.
+See ../data/ROADS.md for attribution, coverage, limitations and rebuild steps.

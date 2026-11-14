@@ -189,17 +189,24 @@
 
   function along(pts, sec) {
     if (!pts.length) return null;
-    if (pts.length === 1 || sec <= 0) return { la: pts[0].la, lo: pts[0].lo, nextJ: pts[1] ? pts[1].j : null, done: false };
+    if (pts.length === 1 || sec <= 0) {
+      const path = T.roads && pts[1] && T.roads.path(pts[0], pts[1]);
+      const p = path ? T.roads.point(path, 0) : pts[0];
+      return { la: p.la, lo: p.lo, nextJ: pts[1] ? pts[1].j : null, done: false, roadAligned: !!path };
+    }
     for (let i = 1; i < pts.length; i++) {
       if (sec <= pts[i].t) {
         const a = pts[i - 1], b = pts[i];
         const f = b.t > a.t ? (sec - a.t) / (b.t - a.t) : 1;
-        return { la: a.la + (b.la - a.la) * f, lo: a.lo + (b.lo - a.lo) * f, nextJ: b.j, done: false,
-                 left: b.t - sec };
+        const path = T.roads && T.roads.path(a, b);
+        const p = path ? T.roads.point(path, f) : { la: a.la + (b.la - a.la) * f, lo: a.lo + (b.lo - a.lo) * f };
+        return { la: p.la, lo: p.lo, nextJ: b.j, done: false, roadAligned: !!path, left: b.t - sec };
       }
     }
     const z = pts[pts.length - 1];
-    return { la: z.la, lo: z.lo, nextJ: null, done: true, over: sec - z.t };
+    const path = T.roads && T.roads.path(pts[pts.length - 2], z);
+    const p = path ? T.roads.point(path, 1) : z;
+    return { la: p.la, lo: p.lo, nextJ: null, done: true, over: sec - z.t, roadAligned: !!path };
   }
 
   M.observe = function (buses, now) {
@@ -421,7 +428,7 @@
       const trip = M.tripOf && M.tripOf[v.g];
       out.push({ id: 'v' + v.g, kind: M.isFresh(v, now) ? 'gps' : 'est', base: v.base, line: v.line,
                  dir: v.dir, dest: v.dest || (R && R.dest), title: v.title, la: p.la, lo: p.lo, garage: v.g,
-                 age: Math.round((now - v.obsAt) / 1000), seen: Math.round((now - v.seenAt) / 1000),
+                 roadAligned: p.roadAligned, age: Math.round((now - v.obsAt) / 1000), seen: Math.round((now - v.seenAt) / 1000),
                  next: R && p.nextJ != null && p.nextJ >= 0 ? stationName(R.s[p.nextJ][0]) : null,
                  dep: v.dep && v.dep !== '00:00:00' ? v.dep.slice(0, 5) : (trip ? T.hhmm(trip.depTs) : null), rk: v.rk });
     });
@@ -431,6 +438,7 @@
       if (!p || p.done || now < t.depTs) return;
       const R = M.routes[t.rk];
       out.push({ id: 't' + t.id, kind: 'sched', base: t.base, line: t.line, dir: t.dir, dest: t.dest || (R && R.dest),
+                 roadAligned: p.roadAligned,
                  title: R && R.title, la: p.la, lo: p.lo, dep: T.hhmm(t.depTs), mark: t.mark,
                  next: p.nextJ != null && p.nextJ >= 0 ? stationName(R.s[p.nextJ][0]) : null, rk: t.rk });
     });

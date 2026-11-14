@@ -118,7 +118,7 @@
     busLayer.on('clusterclick', function (e) {
       if (zooming || clusterAnimating) return;
       if (map.getZoom() >= 17) e.layer.spiderfy();
-      else e.layer.zoomToBounds({ paddingTopLeft: [42, M.focus ? 138 : 68],
+      else map.fitBounds(e.layer.getBounds(), { paddingTopLeft: [42, M.focus ? 138 : 68],
         paddingBottomRight: [48, panelSpace()], maxZoom: 17 });
     });
     function updateArea() {
@@ -145,6 +145,7 @@
       rows += '<div class="pop-row">GPS получен: <b>' + ago(it.age) + '</b></div>';
     }
     if (it.next) rows += '<div class="pop-row">Следующая остановка: <b>' + esc(it.next) + '</b></div>';
+    if (it.kind !== 'gps') rows += '<div class="pop-row">Траектория: <b>' + (it.roadAligned ? 'по дорожной сети между остановками' : 'приблизительная, без дорожной привязки') + '</b></div>';
     if (it.dep) rows += '<div class="pop-row">Отправление с конечной: <b>' + esc(it.dep) + '</b></div>';
     if (it.kind === 'sched') rows += '<div class="pop-row" style="margin-top:4px">Реального GPS нет: место рассчитано по расписанию gspns и времени в пути из nsmart.</div>';
     return rows;
@@ -174,7 +175,7 @@
       const html = busHtml(it);
       if (!m) {
         m = L.marker([it.la, it.lo], {
-          icon: L.divIcon({ className: 'bus-icon vehicle-hit', html: html, iconSize: [56, 48], iconAnchor: [28, 24] }),
+          icon: L.divIcon({ className: 'bus-icon vehicle-hit', html: html, iconSize: [56, 48], iconAnchor: [28, 44] }),
           title: 'Линия ' + it.base + ' · ' + KIND[it.kind],
           zIndexOffset: it.kind === 'gps' ? 300 : it.kind === 'est' ? 200 : 0
         });
@@ -192,7 +193,7 @@
         // removes and reinserts the marker in MarkerCluster, causing flicker.
         if (m.getLatLng().distanceTo([it.la, it.lo]) > 1) m.setLatLng([it.la, it.lo]);
         if (m._html !== html) {
-          m.setIcon(L.divIcon({ className: 'bus-icon vehicle-hit', html: html, iconSize: [56, 48], iconAnchor: [28, 24] }));
+          m.setIcon(L.divIcon({ className: 'bus-icon vehicle-hit', html: html, iconSize: [56, 48], iconAnchor: [28, 44] }));
           m.setZIndexOffset(it.kind === 'gps' ? 300 : it.kind === 'est' ? 200 : 0);
           m._html = html;
           changed.push(m);
@@ -269,8 +270,14 @@
     M.routesOf(M.focus).forEach(function (r) {
       const pts = r.s.filter(function (x) { return x[1] != null; }).map(function (x) { return [x[1], x[2]]; });
       pts.forEach(function (p) { bounds.push(p); });
-      L.polyline(pts, { color: '#fff', weight: 7, opacity: 0.9, interactive: false }).addTo(routeLayer);
-      L.polyline(pts, { color: r.dir === 'B' ? '#83ae42' : '#278d9b', weight: 3, opacity: 0.8 }).addTo(routeLayer);
+      const segments = [];
+      for (let i = 1; i < pts.length; i++) {
+        const path = T.roads && T.roads.path({la:pts[i-1][0],lo:pts[i-1][1]}, {la:pts[i][0],lo:pts[i][1]});
+        if (path) segments.push(T.roads.coordinates(path));
+        else if (!T.roads) segments.push([pts[i-1],pts[i]]);
+      }
+      L.polyline(segments, { color: '#fff', weight: 7, opacity: 0.9, interactive: false }).addTo(routeLayer);
+      L.polyline(segments, { color: r.dir === 'B' ? '#83ae42' : '#278d9b', weight: 3, opacity: 0.8 }).addTo(routeLayer);
     });
     if (!bounds.length && M.lines[M.focus]) {
       M.lines[M.focus].stops.forEach(function (u) { const s = M.stations[u]; if (s && s.la != null) bounds.push([s.la, s.lo]); });
