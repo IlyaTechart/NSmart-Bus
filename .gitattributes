@@ -9,3 +9,5 @@
 *.woff2 binary
 # Preserve captured upstream HTML, including its original whitespace.
 app/tools/fixtures/*.html -whitespace
+# Keep the original project's recorded pages byte-for-byte.
+tests/fixtures/*.html -text
