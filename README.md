@@ -1,334 +1,127 @@
-# NStupido
+﻿# NSmart Bus · Trecker NS
 
-Home display for upcoming buses in GSP Novi Sad: live nsmart data + memory between snapshots + official gspns.rs schedule → compact JSON, HTTP API, and two **WiFi** boards: an OLED 128×64 (Wemos S2 mini) and a colour 240×135 LilyGO TTGO T-Display. A research prototype built for fun, together with Grok Bot.
+**Автобусы Нови-Сада на карте: GPS-позиции, прибытия на остановки и расписание в одном Android-приложении.**
 
-## v4 in short
+Этот репозиторий — форк проекта Павла [katurov/NSBusTablica](https://github.com/katurov/NSBusTablica), дополненный Android-приложением Trecker NS. История, сервер и прошивки исходного проекта сохранены. Его оригинальная документация находится в [UPSTREAM.md](UPSTREAM.md); приложение — в папке [`app/`](app/).
 
-- **Server** (`nstupido.py --serve`, config in `config.toml`) polls nsmart politely through one queue (≤ 1 request / 0.4 s, at most 100 per 40 s cycle), keeps everything in memory except the timetable cache, and serves JSON (`/buses`) plus ready-made text frames for the board (`/frame`).
-- **Board** connects to WiFi and fetches `GET <SERVER_URL>/frame?stop=<uid>` every 5 s; BOOT button cycles the compiled stop list; more than 4 routes → pages.
-- **USB bridge** (`oled_bridge.py`) is legacy/optional: the v4 firmware still draws frames arriving over USB serial.
-- **v4.1 – any stop:** ask for any nsmart stop and, after ~15 s of `"warming"`, get the full list: live buses (G/E) plus the official timetable (P) of *every* line through that stop. Lines come from the nsmart station list, their direction from the gspns network map, missing timetables are downloaded on the spot (paced). The board shows the **base route** only (`14S` → `14`, `1GL` → `1`); letters stay only where they name a different route (`3A`, `7B`, `18A`).
-- **v4.4 – colour board + stop names:** `/frame` gains an optional `N|<stop name>` line (UTF-8; older boards ignore it). New PlatformIO env `tdisplay` for the TTGO T-Display: stop number + scrolling stop name in a light blue header, colour-coded waits, two buttons (stops / pages). See [T-Display board](#t-display-board-v44).
-- **v4.2 – access control:** LAN (`192.168.42.0/24`) and localhost need nothing; other clients need a named token (`Authorization: Bearer …`) from the untracked `auth.toml`, otherwise `401`. See [Access / tokens](#access--tokens).
+Trecker NS помогает посмотреть, где едет автобус, выбрать маршрут и узнать, когда транспорт прибудет на нужную остановку. Приложение использует данные NSmart и официальное расписание GSP Novi Sad. Интерфейс — на русском, названия маршрутов и остановок сохраняются из источников.
 
-Design spec and status: [docs/WIFI_PLAN.md](docs/WIFI_PLAN.md). Data sources, the route naming model and *why* things are done this way: **[docs/DATA_SOURCES.md](docs/DATA_SOURCES.md)**.
+[**Скачать APK 1.5**](https://github.com/IlyaTechart/NSmart-Bus/releases/download/v1.5/Trecker.apk) · [Все релизы](https://github.com/IlyaTechart/NSmart-Bus/releases)
 
-## Project Structure
+<p>
+  <img src="docs/images/map.png" width="260" alt="Карта автобусов Нови-Сада">
+  <img src="docs/images/map-collapsed.png" width="260" alt="Карта со свёрнутой панелью">
+  <img src="docs/images/route.png" width="260" alt="Выбранный маршрут">
+</p>
 
-| Path | Role |
-|---|---|
-| `nstupido.py` | Core: fetch nsmart, memory, feeders, schedule merge, polling queue, HTTP server, CLI |
-| `config.toml` | Server config: default stops, host/port, polling limits, timetable refresh, logging |
-| `nstupido-server.sh` | Start/stop the server detached (`start`/`stop`/`restart`/`status`) |
-| `timetable.py` | Load/cache gspns.rs, day type, hand-made `STOP_LINES` (default stops), scheduled departures, on-demand fetch of missing lines |
-| `auth.py` | API access: trusted networks, named tokens, proxy handling, 401 aggregation |
-| `auth.example.toml` | Template for the untracked `auth.toml` (10 `CHANGE-ME` placeholders, refused as tokens) |
-| `routes.py` | Route naming (base / variant / direction), nsmart station list + gspns network map caches, stop → lines derivation, live learning |
-| `tools/compare_lines.py` | Offline check: automatic stop → lines derivation vs hand-made `STOP_LINES`, departure by departure |
-| `rs_holidays.py` | Republic of Serbia holidays (incl. Orthodox Easter) for fallback day type |
-| `firmware/` | PlatformIO project: env `lolin_s2_mini` (OLED, `src/main.cpp`, default) and env `tdisplay` (TTGO T-Display, `src/tdisplay.cpp`); `include/frame.h` = frame parser + pager (host-testable), `include/hdr_font.h` = T-Display header font |
-| `tools/make_vlw.py` | Generates `firmware/include/hdr_font.h` (anti-aliased TFT_eSPI smooth font, ASCII + č ć š ž đ) from a TTF |
-| `firmware/secrets.ini.example` | Template for the untracked `firmware/secrets.ini` (WiFi SSID / password) |
-| `oled_bridge.py` | Legacy USB bridge: reads `/buses`, sends frames over serial |
-| `tests/` | Offline unit tests (server, schedule, bridge, firmware frame) + live connectivity (`test_live_sources.py`) |
-| `docs/WIFI_PLAN.md` | v4 design and implementation notes |
-| `docs/DATA_SOURCES.md` | Sources, route naming model, how they are combined, caching / rate-limit / display decisions and why |
-| `HOW_TO_TEST_DATA.md` | Agent playbook: how to verify data is coming through |
-| `requirements.txt` | Optional deps (`pyserial` for the bridge, `tomli` on Python < 3.11 optional) |
-| `cache/gspns/` | **runtime**: timetables + index (`timetable_<vaziod>.json`, `index.json`), network map (`map.json`) |
-| `auth.toml` | **untracked, git-ignored**: real API tokens on the server (copy of `auth.example.toml`) |
-| `cache/nsmart/stations.json` | **runtime**: nsmart station list (names, coordinates, lines per stop) |
-| `nstupido.log`, `nstupido.pid` | **runtime**: server log / PID when started with `nstupido-server.sh` |
+## Возможности
 
-## Data Sources
+- Векторная карта с собственным светлым стилем: голубой Дунай, зелёные парки и спокойные цвета улиц.
+- Городские и пригородные маршруты, поиск по номеру или названию района.
+- Три типа позиций: свежий GPS, расчёт по последнему GPS и прогноз по расписанию.
+- Фильтр «Только GPS» и переход к собственному местоположению.
+- Группировка близких автобусов с количеством и номерами маршрутов. Нажатие приближает группу, а на крупном масштабе раскрывает совпадающие метки веером.
+- Сворачиваемая карточка «На карте сейчас»: потяните вниз за верхнюю часть или нажмите стрелку. Свайп вверх раскрывает её обратно.
+- Прибытия на остановку по нажатию на её кружок и расписание отправлений с конечных.
+- Кэширование каталога остановок, изученных маршрутов и расписаний.
 
-| Source | How | Auth |
-|---|---|---|
-| **nsmart** live | `POST https://online.nsmart.rs/sr/najava-dolaska/` (`station_uid`, …) | none |
-| **nsmart** station list | `POST …/AnnouncementForStation/getAllStations` (names, coordinates, `lines_for_station`) | none |
-| **gspns** day type / vaziod | `GET http://gspns.rs/red-voznje/gradski` | none |
-| **gspns** line list | `GET …/red-voznje/lista-linija?rv=&vaziod=&dan=` | none |
-| **gspns** departures | `GET …/ispis-polazaka?rv=&vaziod=&dan=&linija[]=` | none |
-| **gspns** network map | `GET http://gspns.rs/mreza` (buttons) + `GET /mreza-get-stajalista-tacke?linija=<id>` (stops + labels) | none |
-| **holidays** | `rs_holidays.py` (RS law) | — |
+## Установка
 
-Endpoints are undocumented and may change without notice.
+1. Скачайте [Trecker.apk из релиза](https://github.com/IlyaTechart/NSmart-Bus/releases/latest).
+2. Откройте APK на Android и, если потребуется, разрешите установку из выбранного браузера или файлового менеджера.
+3. Запустите приложение с подключением к интернету. Разрешение на геолокацию нужно только для кнопки «Где я».
 
-## Display Status Types
+Требуется **Android 7.0 или новее**. Карта и актуальные прибытия загружаются из сети; это не приложение для полноценной работы офлайн. Для векторной карты нужен WebView с поддержкой WebGL; при его отсутствии включается резервная растровая карта.
 
-| `status` | `label` | OLED | Meaning |
-|---|---|---|---|
-| `live` | Sveže | `G` | Bus in fresh snapshot (this stop or previous one) |
-| `lost` | Videli-izgubili | `E` | Seen earlier, now estimating from memory |
-| `scheduled` | Po rasporedu | `P` | Departure from schedule, not yet seen |
+## Что означают цвета
 
-## Default Stops
+| Метка | Источник | Как понимать |
+| --- | --- | --- |
+| Зелёная · GPS | Свежие координаты из NSmart | Последняя известная GPS-позиция. Она тоже может приходить с задержкой. |
+| Золотистая · Расчёт | Ранее полученный GPS и времена до остановок | Приблизительная позиция после последнего свежего GPS. |
+| Светлая · Расписание | Расписание GSP и известное время движения | Прогноз без реального GPS. Он не подтверждает, что автобус действительно вышел на рейс. |
 
-| uid | Code | Name | Lines |
-|---|---|---|---|
-| 6539 | 0220B | Bulevar kralja Petra prvog-Mašinska škola | 18A, 3, 8 |
-| 15889 | 0509-1A | Bulevar Oslobodjenja … prigrad (suburban) | 52–56, 60–64, 68, 69, 71–74, 76–81, 84, 86 (+IS) |
-| 6712 | 0509A | Bulevar Oslobođenja - Bulevar Kralja Petra prvog (city) | 4, 7A, 10/10MAL, 14/14S/14GS, 15, 18A, 19, 3A, 5N |
+NSmart предоставляет данные о прибытиях к отдельным остановкам, поэтому приложение опрашивает набор остановок и постепенно собирает картину движения. Автобусы появляются по мере получения ответов; карта не гарантирует полный охват транспорта. Повторный ответ с теми же координатами не считается новым GPS-замером.
 
-15889 and 6712 are ~3 m apart, ~385 m from 6539. Other useful stops: 6551 (opposite 6539), 6709 (other side of boulevard).
+В расписании показано **отправление с конечной**, а не обещанное время прибытия на любую остановку. Время рассчитывается для часового пояса `Europe/Belgrade`.
 
-Any other stop: just ask for it (`/buses?stop=<uid>`, `/frame?stop=<uid>`, or add it to the board's `STOPS`); the server starts polling it (live + feeders) on the first request and derives its lines automatically (station list + network map), fetching missing timetables right away. The three default stops keep their hand-made `STOP_LINES` in `timetable.py` as an override (the automatic derivation reproduces them, see [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md#automatic-vs-hand-made-lines)); default stops: `[stops] default` in `config.toml`.
+## Разработка
 
-## Server
+Приложение состоит из HTML/CSS/JavaScript в Android WebView и небольшой Java-оболочки. Оболочка выполняет сетевые запросы к NSmart/GSP, обрабатывает разрешение геолокации и системную кнопку «Назад». Сервер для работы APK не требуется.
 
-### Run it (on the host behind `nstupido.teamof.top`)
-
-`nstupido.teamof.top` currently resolves (LAN DNS) to `192.168.42.56`, Paul's Mac, so the server runs there on port 8080. Any Linux/macOS host with Python ≥ 3.9 works the same way:
-
-```bash
-git clone https://github.com/katurov/NSBusTablica.git NStupido && cd NStupido
-# edit config.toml if needed (default stops, port); tokens for outside clients:
-cp auth.example.toml auth.toml && chmod 600 auth.toml   # then replace every CHANGE-ME-xx with a real token
-./nstupido-server.sh start            # detached; PYTHON=/opt/homebrew/bin/python3.10 ./nstupido-server.sh start on the Mac
-./nstupido-server.sh status
-curl -s http://nstupido.teamof.top:8080/ ; curl -s "http://nstupido.teamof.top:8080/frame?stop=6539"
-./nstupido-server.sh stop
+```text
+app/
+  www/                  интерфейс, карта, модель движения и встроенные библиотеки
+  android/              Java-оболочка, AndroidManifest и ресурсы
+  tools/                локальный сервер, тесты и тестовые данные
+  build.ps1             сборка и подпись APK
+docs/images/            скриншоты интерфейса
 ```
 
-Foreground (debug): `python3 nstupido.py --serve` (`--port`, `--host`, `--config` override `config.toml`). The macOS firewall must allow incoming connections for the Python binary. For port 80 put a reverse proxy in front (or set `port = 80` where the OS allows it) and change the board's `SERVER_URL`.
+### Запуск в браузере
 
-### Access / tokens
+Понадобится Node.js 18 или новее:
 
-The server may be reachable from outside the LAN (`nstupido.teamof.top`), so v4.2 checks every request:
-
-- **Trusted networks** need nothing: `[auth] trusted_networks`, default `127.0.0.0/8`, `::1`, `192.168.42.0/24`. IPv4-mapped IPv6 peers (`::ffff:192.168.42.x`, dual-stack sockets) count as their IPv4 address. The board on the LAN keeps working without changes.
-- **Everyone else** needs a named token, sent in one of three ways: `Authorization: Bearer <token>` (preferred), `X-Token: <token>`, or `?token=<token>` (handy for a browser; it ends up in browser history and proxy logs, so use the header where possible). Without a valid token the server answers `401` with `WWW-Authenticate: Bearer` and the body `unauthorized`, nothing more.
-- **Tokens live in `auth.toml`**, an untracked and git-ignored file next to `config.toml`. The server pulls code from git, so a tracked file with Paul's tokens would be overwritten or conflict on every pull, and secrets don't belong in a public repo anyway. Template: `auth.example.toml`. Any `[auth]` key can also be set in `auth.toml` (it wins over `config.toml`).
-  ```toml
-  [auth.tokens]
-  friend01 = "y3n...32 random characters..."
-  phone    = "..."
-  ```
-  `tokens = { friend01 = "…", phone = "…" }` under `[auth]`, or a top-level `[tokens]` table, work too, also on Python 3.10 (built-in parser).
-- **Refused tokens:** values starting with `CHANGE-ME`, empty values and values shorter than 16 characters. Each is listed at startup as `auth: WARNING token friend02 ignored: placeholder`. **With no usable token, every request from outside is rejected** (secure default): forgetting `auth.toml` never opens the server.
-- `[auth] enabled = false` turns checking off entirely (logged at startup; only for closed networks).
-- Tokens are compared in constant time (`hmac.compare_digest`) and never logged; `?token=` is removed from logged paths.
-- **`X-Forwarded-For`** is ignored unless the direct peer is in `[auth] trusted_proxies` (e.g. `["127.0.0.1/32"]` behind a local nginx). Then the right-most forwarded address that is not itself a proxy is the client. Otherwise anyone could claim to be on the LAN.
-- `GET /` shows the per-client list (addresses, last request) only to trusted networks. Token clients get the rest.
-- Logs: `token friend01 first request from 1.2.3.4: /frame?stop=6539` (once per token name per run); rejected requests are never logged one by one, only `unauthorized: 37 requests in last 30 min from 3 address(es)` at most every 30 min and only if there were any; the 12 h `stats:` line ends with `requests by token: friend01 120, phone 7`.
-- **Scanner noise (v4.3):** connections reset / broken / timed out mid-request and malformed requests (e.g. TLS sent to plain HTTP → `400`) print no tracebacks; they are summarised at most every 30 min, only if non-zero: `dropped: 12 connections in last 30 min from 4 address(es)`, `bad requests: 7 in last 30 min from 3 address(es)`. Idle connections are closed after 15 s (handler timeout; the board's request takes milliseconds). Any other exception is logged once with its full traceback.
-
-Use from outside:
-
-```bash
-curl -H "Authorization: Bearer <token>" "http://nstupido.teamof.top:8080/frame?stop=6539"
-curl "http://nstupido.teamof.top:8080/buses?stop=6660&token=<token>"
+```sh
+cd app
+npm start
 ```
 
-### Behaviour
+Откройте `http://localhost:8787`. Локальный сервер проксирует запросы к источникам данных, заменяя Android-мост. Запускайте его только в доверенной локальной среде. Для просмотра отдельного маршрута можно использовать `http://localhost:8787/#focus=9`.
 
-- **Watch list:** default stops (config) never expire. Any other stop is added on its first request and dropped 4 h after its last request (its feeders leave too, unless shared).
-- **Unknown stop:** answered immediately with what exists and `"warming": true`; it jumps the queue for its first live request, and its lines are derived (nsmart `lines_for_station` → gspns map labels of the matching map stop → route, direction, variants). Timetables of lines never fetched before are downloaded at once (one request every 1–2 s, about 8 requests per kind of line) and `"warming"` stays on until they are in. If nsmart says the stop doesn't exist → `404` afterwards.
-- **Route seen live but unknown:** if a live bus passing a watched stop belongs to a route that the map/timetables don't place there, its direction is learned from nsmart `actual_line_number` (trailing `B` = direction B) and its timetable is fetched — without waiting for a map refresh.
-- **Reference caches:** the nsmart station list (`cache/nsmart/stations.json`) and the gspns network map (`cache/gspns/map.json`) change rarely. A cache older than 14 days (or missing) is refreshed 1 hour after server start, and the age is re-checked daily at 05:10 for long-running servers. A failed refresh keeps the old cache. Exception: with no station list at all, it is fetched once immediately (one request), because nothing works without it.
-- **Queue:** each stop is a group = the stop followed immediately by its feeder stops; shared feeders are requested once per cycle. With `N` requests per cycle the spacing is `max(0.4 s, 40 s / N)` (8 requests → one every 5 s). Capacity `40 / 0.4 = 100` requests per cycle; a new stop is accepted only if it fits (a never-seen stop is counted as 1 + 3 assumed feeders), else `429`. Watched stops are always served.
-- **Backoff:** global; after an nsmart failure the next request waits 5, 10, 20, 40, 80, 160 s, capped at 180 s; the first success resets it. Meanwhile clients get timetable-only data with `"live": false`.
-- **Rate guarantee:** every nsmart request (arrivals and the station list) passes one gate with ≥ 0.4 s spacing; every gspns request (timetables, line lists, map) passes one lock with a random 1–2 s pause. HTTP clients never trigger upstream requests directly (they only queue work).
-- **Logging:** syslog, facility `daemon`, ident `nstupido` (macOS `/var/run/syslog`, Linux `/dev/log`, fallback stderr) and a copy on stderr (`nstupido.log`). Lines: start / stop, reference cache ages at start, timetable refresh result, `timetables for stop 6660: ok (rvg 1,12,6)`, station list / network map refresh results, `stop … route … seen live … learning`, `client <ip> first request: /frame?stop=6539 -> 200` (once per client; there is no access log), `http: /frame 200 x360, …` every 30 min, `stats:` every 12 h (watched stops, queue length, unique client IPs in 12 h), `nsmart errors: 37 in last 30 min (timeout 30, http 503 7), backoff 180 s` at most every 30 min and only if there were errors. macOS: `log show --last 1h --predicate 'eventMessage CONTAINS "nstupido"'`; Linux: `journalctl -t nstupido`.
+### Проверки
 
-### API
+Основные тесты не требуют установки npm-пакетов или доступа к сети:
 
-| Request | Answer |
-|---|---|
-| `GET /` | usage, default stops, watch list with expiry, queue length/limit/interval, backoff state, ready, HTTP status counts, last request per client |
-| `GET /buses?stop=<uid>[,<uid>…][&merge=1]` | JSON (format below) |
-| `GET /frame?stop=<uid>` | text frame for the board (below) |
-| `GET /debug` | timetable status, per watched stop: line entries + derivation (nsmart lines, matched map stop, labels, lines pending live), reference cache ages, feeders, learned travel times, recent arrivals |
-
-| Code | When |
-|---|---|
-| `200` | data (maybe `"warming": true` or `"live": false`) |
-| `400` | malformed uid (must be 1–7 digits) |
-| `401` | outside the trusted networks without a valid token (`WWW-Authenticate: Bearer`, body `unauthorized`) |
-| `404` | stop does not exist in nsmart |
-| `429` | queue full: `Retry-After: 600`, `{"error": "stop limit reached", "limit": 100}` |
-| `503` | starting, no timetable yet: `Retry-After: 10` (only on a first start without cache) |
-
-**Board frame** (`text/plain`, same line protocol as the USB bridge; all routes, nearest arrival first, max 24; one row per base route — variants such as 1 / 1GL / 1J share a row — ASCII-folded to 5 chars):
-
-```
-H|6539|12:33|W        stop | server time | flags: W = warming, O = offline (nsmart backoff)
-N|Bulevar kralja Petra prvog-Mašinska škola     optional (v4.4): stop name, UTF-8, whitespace collapsed, max 80 chars
-R|8|G:1|P:31          route | up to 2 cells: G live, E estimate, P timetable (minutes)
-R|3|E:6|P:33
-E
+```sh
+cd app
+npm test
 ```
 
-Errors on `/frame` come as `ERR|<code>|<message>` with the same HTTP codes.
+Для проверок интерфейса установите зависимости и Chrome, затем запустите локальный сервер в отдельном терминале:
 
-The `N` line (v4.4) is a new line type rather than a new `H` field or a query parameter: the S2 mini firmware and `frame.h` before v4.4 skip unknown line types, so old boards keep working unchanged and every board gets the same response. The name is the full nsmart station name (from the station list when the stop has not been polled yet); it stays UTF-8 because the colour board can draw Serbian Latin letters, while route names in `R` lines stay ASCII-folded for the OLED fonts. No name known → no `N` line.
-
-### `config.toml`
-
-| Key | Default | Meaning |
-|---|---|---|
-| `server.host` / `server.port` | `0.0.0.0` / `8080` | listen address |
-| `server.timezone` | `Europe/Belgrade` | 05:00 refresh, frame clock |
-| `stops.default` | `["6539", "15889", "6712"]` | always polled, never expire |
-| `polling.cycle_s` | 40 | every watched stop refreshed once per cycle |
-| `polling.min_interval_s` | 0.4 | minimum spacing between nsmart requests |
-| `polling.watch_ttl_h` | 4 | dynamic stop expiry after its last request |
-| `polling.backoff_min_s` / `backoff_max_s` | 5 / 180 | exponential backoff |
-| `polling.assumed_feeders` | 3 | capacity estimate for a never-seen stop |
-| `timetable.refresh_at` | `"05:00"` | daily gspns refresh (local) |
-| `timetable.pause_s` | `[1, 2]` | random pause between gspns requests |
-| `timetable.retry_min` / `retries` | 15 / 3 | retry after a failed refresh (also: failed timetable fetch for a new stop) |
-| `auth.enabled` | `true` | `false` = no access control |
-| `auth.trusted_networks` | `["127.0.0.0/8", "::1/128", "192.168.42.0/24"]` | no token needed |
-| `auth.trusted_proxies` | `[]` | peers whose `X-Forwarded-For` is believed |
-| `auth.file` | `"auth.toml"` | untracked token file (relative to `config.toml`), overrides `[auth]` |
-| `reference.max_age_days` | 14 | station list / network map older than this are refreshed … |
-| `reference.start_delay_min` | 60 | … this long after start, then checked daily at `refresh_at` + 10 min |
-| `logging.stats_every_h` / `errors_every_min` | 12 / 30 | syslog cadence |
-
-Python 3.11+ reads it with `tomllib`; older Pythons use `tomli` if installed, else a built-in parser for this simple subset.
-
-### CLI
-
-`python3 nstupido.py [uid …] [--pretty] [--merge] [--no-schedule | --schedule-only] [--no-feeders]` — one-shot JSON (requests paced ≥ 0.4 s). v4 removed `--state`, `--no-state`, `--interval`, `--log-snapshots` and `?schedule=` on the server.
-
-## Firmware (WiFi board)
-
-Wemos/LOLIN S2 mini + 128×64 I2C OLED (SDA 18, SCL 16), PlatformIO env `lolin_s2_mini` (the default env: `pio run -t upload` builds only this one). The colour board: [T-Display board](#t-display-board-v44).
-
-### Secrets and build flags
-
-WiFi credentials are never committed: `firmware/platformio.ini` includes `firmware/secrets.ini` (git-ignored) via `extra_configs`.
-
-```bash
-cd firmware
-cp secrets.ini.example secrets.ini     # fill in WIFI_SSID / WIFI_PASS
-pio run -t upload --upload-port /dev/cu.usbmodem01
-pio device monitor                     # optional: "[nstupido] GET … -> 200" log lines
+```sh
+npm ci
+npm start
 ```
 
-| Define | Default | Where | Meaning |
-|---|---|---|---|
-| `WIFI_SSID`, `WIFI_PASS` | — | `secrets.ini` | WiFi network (build fails without `WIFI_SSID`) |
-| `SERVER_URL` | `"http://nstupido.teamof.top:8080"` | `platformio.ini` (override in `secrets.ini`) | server base URL, plain HTTP |
-| `STOPS` | `"6539,15889,6712"` | `platformio.ini` | stops for the BOOT button, first shown at start (max 8) |
-| `OLED_SDA` / `OLED_SCL` | 18 / 16 | `platformio.ini` | I2C pins |
-| `OLED_CONTRAST` | 40 | `platformio.ini` | brightness 0…255 |
-| `OLED_SH1106` | off | `platformio.ini` | SH1106 1.3″ panel |
-| `BTN_PIN` | 0 | — | stop button (BOOT, active low) |
+В другом терминале, в папке `app`:
 
-### What it shows
-
-1. Startup: `WiFi...` → `WiFi OK <ip>` → `server...` → `server OK` (`GET /`) → `stop 6539...` → `stop 6539 OK` → the board.
-2. Board (same layout as v3): header `<stop> <i>/<n>` and the clock (from the server), up to 4 routes with cells `4(G)` / `12(E)` / `8(P)`. More than 4 routes → pages of 4, one page per 5 s fetch, header `<stop> p<page>/<pages>` (e.g. `15889 p2/4`); order is nearest-first, frozen for one cycle so a route never jumps pages. Header marks: `*` = stop warming on the server, `!` = server has no live nsmart data (timetable only).
-3. BOOT button: next stop, page 1; header inverts with `>>` until the new frame arrives (max 3 s).
-4. Errors (next try after 60 s): `nema WiFi`, `server ne odgovara` (unreachable / timeout), `greska servera <code>` (other code or a bad frame), `limit stanica` (429), `nema stanice` (404). The last good frame stays on screen while it is younger than 90 s; after that it stays with a bottom bar showing the error (or `veza izgubljena`). Without any frame the error is shown full screen.
-
-### Legacy USB bridge
-
-`oled_bridge.py` (needs `pyserial`) still works with the v4 firmware: frames arriving over USB serial are drawn as sent (bridge does its own paging/header), WiFi fetching pauses while they keep coming (30 s), and BOOT then sends `BTN` to the bridge. Board → host lines: `OK`, `BTN`, `[nstupido] …` log lines (ignored by the bridge); `?` → `NStupido OLED v4`. Bridge flags: `--stop` (6539), `--stops` (server default stops), `--port` (auto), `--server-port` (8080), `--every` (5 s), `--once`. Don't run the bridge and a serial monitor at the same time.
-
-## T-Display board (v4.4)
-
-LilyGO TTGO T-Display: ESP32-D0WDQ6 (4 MB flash, no PSRAM), 1.14″ ST7789V IPS 135×240 used landscape (240×135), CP2104 USB-UART, buttons GPIO0 and GPIO35. Same server, same `/frame`, same stops, same error texts and retry rules as the OLED board. Built with Grok Bot.
-
-![T-Display, real framebuffer screenshots: stop 6539 at two moments of the scrolling name](docs/img/tdisplay.png)
-
-```bash
-cd firmware                                   # secrets.ini as for the OLED board
-pio run -e tdisplay -t upload --upload-port /dev/cu.usbserial-01EEA79E
-pio device monitor -e tdisplay                # "[nstupido] stop 6539 \"Bulevar …\" routes 2 page 1/1"
+```sh
+npm run test:ui
+npm run preview
 ```
 
-Layout (Paul's spec):
-- **Header**, top quarter (34 px): a 32 px light blue band plus a 2 px black gap above the routes (Paul: more space between the band and the route numbers); in the band the **stop number** in black on a darker blue box (`*` warming, `!` nsmart offline; the box inverts while switching stops), then the **stop name** on one line in Roboto Condensed SemiBold 24 px, anti-aliased, black. A name that does not fit **scrolls** (marquee: 2 s pause at the start, then ~33 px/s, wraps with a gap); short names stay still. No `N` line from the server (older than v4.4) → the number alone.
-- **Routes**, one per row, 4 rows (`-DTD_ROWS=5` → 5 smaller rows): route number **bold** white, right-aligned in a fixed 5-character column; then up to two waits `<n> min`, coloured by source: **G** live = green, **P** timetable = orange, **E** estimate = yellow.
-- **Pages**: more routes than rows → dots at the right edge (current page white). Pages turn only by button; 30 s after the last page press the board goes back to page 1 (the nearest buses).
-- **Buttons**: left / GPIO0 = next stop (page 1); right / GPIO35 = next page. Same 30 ms debounce as the OLED board (the earlier phantom presses came from a changed debounce).
-- **Serial console** (115200): `?` → `NStupido T-Display v4.4`, `stop` / `page` = the buttons, `shot` = raw RGB565 framebuffer (240×135, big-endian) for screenshots.
+При нестандартном расположении Chrome задайте переменную окружения `CHROME_PATH` с путём к исполняемому файлу. Тест интерфейса проверяет реальные touch-жесты, сворачивание панели, сохранность автобусов при масштабировании, раскрытие групп и GPS-фильтр. Для воспроизводимых проверок группировки используются тестовые позиции; они не попадают в приложение. Проверка `preview` работает с сетевыми источниками и сохраняет скриншоты.
 
-Why these choices:
-- **Two font systems.** Rows and messages use u8g2 bitmap fonts (helvB18 / helvR10) through `U8g2_for_TFT_eSPI`: crisp at small sizes, and the route rows were approved as they are. The header uses a TFT_eSPI smooth (anti-aliased) font: the first version used a 12 px bitmap font with the name wrapped over two lines and the clock/number in 8 px, and both were hard to read on the real screen. One 24 px line plus a marquee is readable from across the room and never cuts a name.
-- **Font file.** `tools/make_vlw.py` writes only the glyphs needed (printable ASCII + `ČčĆćŠšŽžĐđ…`, ~23 KB in flash) as a C array, so no SPIFFS upload step is needed. Roboto Condensed (SIL Open Font License) fits long Novi Sad names well.
-- **No flicker.** Everything is drawn into one 240×135 16-bit sprite (63 KB, allocated before WiFi) and pushed in one go; the marquee redraws and pushes only the 34 px header band every 30 ms, from `loop()`, so buttons stay responsive. A slow HTTP request (LAN: ~0.1 s, timeout 4 s) pauses the marquee for that long.
-- **Clock dropped** from the header (the OLED board keeps it): the space went to the number and the name.
+### Сборка APK на Windows
 
-| Define | Default | Meaning |
-|---|---|---|
-| `TD_ROWS` | 4 | route rows per page (4: helvB18, 5: helvB14) |
-| `TFT_BRIGHTNESS` | 160 | backlight PWM 0…255 (GPIO4) |
-| `BTN_STOP` / `BTN_PAGE` | 0 / 35 | buttons, active low |
-| `SERVER_URL`, `STOPS`, `WIFI_*` | as for the OLED board | |
+Нужны JDK 17 и Android SDK с `platforms;android-34` и `build-tools;34.0.0`. Android Studio и Gradle не обязательны.
 
-TFT_eSPI is configured entirely by build flags in `platformio.ini` (`USER_SETUP_LOADED`, pins of Setup25_TTGO_T_Display), so the library needs no local edits.
+Ожидаемая структура каталога инструментов:
 
-## Tests
-
-```bash
-python3 -m unittest discover -s tests -v          # offline + live
-python3 -m unittest tests.test_server -v          # v4 server: queue math, groups, capacity/429, TTL, backoff,
-                                                  # log aggregation, HTTP codes, timetable refresh schedule
-python3 -m unittest tests.test_schedule -v        # schedule, matching, feeders
-python3 -m unittest tests.test_server -v          # v4.4: N|<stop name> line in /frame (also covered above)
-python3 -m unittest tests.test_conn -v            # v4.3: resets / timeouts / bad requests counted, not printed
-python3 -m unittest tests.test_auth -v            # v4.2: trusted networks, tokens, CHANGE-ME, mapped IPv6, proxies, 401 log
-python3 -m unittest tests.test_routes -v          # v4.1: route names, map matching, mark rules, cache age rules,
-                                                  # new-stop flow, unknown live route, HTTP counters
-python3 -m unittest tests.test_bridge -v          # legacy bridge: stop cycling, serial input, paging
-python3 -m unittest tests.test_firmware_frame -v  # firmware frame.h parser (incl. N line, UTF-8 cut) + pager, compiled with c++ (skipped without a compiler)
-python3 -m unittest tests.test_live_sources -v    # upstream reachability (network)
+```text
+trecker-tools/
+  jdk/bin/java.exe
+  sdk/platforms/android-34/android.jar
+  sdk/build-tools/34.0.0/
 ```
 
-Offline tests use fake upstreams and a fake clock; they never contact nsmart or gspns. Live checks: **[HOW_TO_TEST_DATA.md](HOW_TO_TEST_DATA.md)**.
-
-## Memory (Brief)
-
-nsmart snapshots refresh ~15–20 s and are often nearly empty. NStupido remembers each bus by key (stop, garage, line) and counts down ETA itself until a fresh value arrives. Removal: 0 s already 30 s without appearing in snapshot; not seen longer than `last value + 120 s` (≤20 min); same trip already past our stop; new trip of same bus on line. Memory lives in RAM only (v4: no `state.json`); after a restart it is rebuilt within a few cycles, learned travel times fall back to the timetable offsets until relearned.
-
-## Previous Stops (Feeders)
-
-The stop itself often returns empty, while the previous one on the route shows the same buses earlier. ETA = ETA to previous + `second_left_by_route` difference. Marked `"source":"via 6540"`. Seeds: 6539 ← 6540/6750/6679; 6712 ← 6586/6728; 15889 — none (terminals before it with fake `P1`…). Polled in the same queue group right after their stop (once per 40 s cycle, shared feeders once). `--no-feeders` disables.
-
-## Schedule (Brief)
-
-At startup (if the cache is older than today's 05:00) and daily at 05:00 Europe/Belgrade the day type is read from gspns + `vaziod`, and R/S/N/P timetables for the lines of **all watched stops** (default + dynamic; hand-made `STOP_LINES` or derived) are downloaded with a random 1–2 s pause between requests → `cache/gspns/` (atomic writes; the only data on disk). A failed part keeps the previous copy; a failed refresh is retried after 15 min, up to 3 times. Day type fallback: holiday → P, Sat → S, Sun → N, otherwise R. Trips after midnight belong to previous service day. Window ~40 min before ETA; 3 min after due without bus — removed. Matching with live by `entered_departure_time` ±1 min or nearest ±6 min. `--no-schedule` / `--schedule-only` (CLI).
-
-## JSON Format
-
-Per-stop (default). v4 adds `"warming": true` (stop just added: no live answer or timetables yet) and `"live": false` (nsmart in backoff: timetable entries only). v4.1: `line` is the displayed base route, `nsmart_line` the original variant name, `entry` (scheduled only) tells whether the line came from the hand-made table (`manual`), the network map (`map`) or live learning (`live`):
-
-```json
-{"timestamp":"…","stops":[
-  {"stop":{"uid":"6539","name":"…"},"timestamp":"…","buses":[
-    {"line":"8","nsmart_line":"8","direction":"Liman 1","minutes":3,"seconds":236,"stops_between":2,
-     "garage_no":"1119","lat":…,"lng":…,"current_stop":"…",
-     "live":true,"last_seen":1,"status":"live","label":"Sveže",
-     "scheduled_departure":"17:18","expected":"17:37","source":"via 6750","trip_id":"…"}
-  ]}
-]}
+```powershell
+$env:TRECKER_TOOLS = 'C:\path\to\trecker-tools'
+powershell -ExecutionPolicy Bypass -File app/build.ps1
 ```
 
-`--merge` / `?merge=1`: one `buses[]` with `stop_uid` / `stop_name`; stop errors — in `errors`.
+Результат — `Trecker.apk` в корне проекта. Без `TRECKER_TOOLS` используется папка `trecker-tools` в профиле текущего пользователя.
 
-| Field | Value |
-|---|---|
-| `line` / `nsmart_line` / `direction` | Displayed route (base), nsmart variant name, destination |
-| `minutes` / `seconds` | Until arrival |
-| `stops_between` | Stops until you (`null` for scheduled) |
-| `garage_no`, `lat`, `lng`, `current_stop` | Position (`null` for scheduled) |
-| `status` / `label` / `live` | live / lost / scheduled |
-| `last_seen` | Seconds since last snapshot (`null` for scheduled) |
-| `scheduled_departure` / `expected` | HH:MM |
-| `source` | `direct` or `via <uid>` |
-| `variant` / `trip_id` | gspns variant and trip id |
+Ключ подписи `app/android/trecker.keystore` не хранится в репозитории. Если его нет, скрипт создаёт локальный ключ для разработки. APK, подписанный другим ключом, не установится поверх релизного как обновление. Сохраняйте свой ключ для последующих собственных сборок.
 
-For stop: `updated` — seconds since last successful upstream. On network error there's `error`, but memory is still returned. Sorted by `seconds`. CLI exit code 1 if all requests errored and nothing to show. HTTP: see the server API table above.
+## Источники и благодарности
 
-## Notes
+- [NSmart](https://online.nsmart.rs/) — сведения о прибытиях и движении транспорта.
+- [GSP Novi Sad](https://www.gspns.rs/) — официальное расписание.
+- [OpenFreeMap](https://openfreemap.org/), [OpenMapTiles](https://openmaptiles.org/), [OpenStreetMap](https://www.openstreetmap.org/copyright) — картографические данные и векторная подложка.
+- [Leaflet](https://leafletjs.com/), [MapLibre GL JS](https://maplibre.org/), Leaflet.markercluster и Manrope — библиотеки и шрифт. Лицензии встроенных компонентов находятся в `app/www/lib/`.
+- [katurov/NSBusTablica](https://github.com/katurov/NSBusTablica) — идеи работы с NSmart, обработки устаревших координат и прогнозов; происхождение тестовых данных описано в `app/tools/fixtures/README.md`.
 
-- nsmart often has short horizon → memory, feeders, and schedule needed.
-- nsmart lists 54"A", 54ŽA, 56, 61, 62, 76 at 6712 and 56 at 15889, but the network map does not: they are not scheduled there until a live bus proves it (then learned). Announcements on `gspns.rs/aktuelno` not read by script.
-- `radius` doesn't affect arrival prediction (only nearest stop search).
-- Names in response truncated to 50 characters — restored from the station list (`cache/nsmart/stations.json`; the old `stations_cache.json` is no longer used and can be deleted).
-- Find uid: `POST …/getAllStations` (fields `id`, `name`).
-- No mDNS (`nstupido.local`) in v4: the board uses `SERVER_URL` (DNS name or IP).
+Это независимый проект, не официальное приложение NSmart или GSP Novi Sad. Доступность данных и точность прогнозов зависят от внешних сервисов.

@@ -35,3 +35,29 @@ firmware/secrets.ini
 # API tokens (untracked; template: auth.example.toml)
 auth.toml
 secrets.toml
+
+# Android application
+# Local signing material must never be published.
+*.keystore
+*.jks
+*.p12
+*.pem
+.env
+.env.*
+!.env.example
+
+# Generated artifacts are distributed via GitHub Releases.
+app/build/
+*.apk
+*.idsig
+node_modules/
+*-preview.png
+tile-check.png
+test-results/
+playwright-report/
+.DS_Store
+Thumbs.db
+*.log
+
+# Working notes for the original development environment.
+NSBusTablica_analysis.md
