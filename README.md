@@ -128,4 +128,4 @@ powershell -ExecutionPolicy Bypass -File app/build.ps1
 - [Leaflet](https://leafletjs.com/), [MapLibre GL JS](https://maplibre.org/), Leaflet.markercluster и Manrope — библиотеки и шрифт. Лицензии встроенных компонентов находятся в `app/www/lib/`.
 - [katurov/NSBusTablica](https://github.com/katurov/NSBusTablica) — идеи работы с NSmart, обработки устаревших координат и прогнозов; происхождение тестовых данных описано в `app/tools/fixtures/README.md`.
 
-Это независимый проект, не официальное приложение NSmart или GSP Novi Sad. Доступность данных и точность прогнозов зависят от внешних сервисов.
+Это независимый проект, не официальное приложение NSmart или GSP Novi Sad. Доступность данных и точность прогнозов зависят от внешних сервисов. /Android
