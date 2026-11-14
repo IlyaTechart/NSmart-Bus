@@ -1,0 +1,15 @@
+{
+  "name": "nsmart-bus",
+  "version": "1.5.0",
+  "private": true,
+  "description": "Trecker NS: a Novi Sad bus map and timetable for Android",
+  "scripts": {
+    "test": "node tools/test_core.js",
+    "start": "node tools/devserver.js",
+    "test:ui": "node tools/test-map-interactions.cjs",
+    "preview": "node tools/preview-design.cjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.51.1"
+  }
+}

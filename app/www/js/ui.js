@@ -1,0 +1,608 @@
+/* Screens: map of all buses, choose a line, timetable. Left drawer menu. */
+(function (T) {
+  'use strict';
+  const M = T.model, G = T.gspns;
+  const $ = function (s) { return document.querySelector(s); };
+  const esc = function (s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  };
+  const ui = T.ui = { screen: 'map' };
+  const CENTER = [45.2517, 19.8533];
+  const KIND = { gps: 'GPS (точно)', est: 'Расчёт (GPS был недавно)', sched: 'По расписанию (без GPS)' };
+
+  let map, busLayer, stopLayer, routeLayer, canvas, meMarker = null;
+  const markers = {};
+  let stopLoading = false, stopAt = 0;
+  let sheetStop = null, ttState = { rv: 'rvg', dan: null, base: null };
+  let gpsOnly = false;
+  let zooming = false, clusterAnimating = false, spiderfied = false, panelCollapsed = false;
+  const BUS_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="15" rx="4"/><path d="M5 10h14M8 21v-3M16 21v-3M8 14h1M15 14h1"/></svg>';
+
+  // ---------------- drawer + navigation ----------------
+  function openDrawer(on) {
+    $('#drawer').classList.toggle('open', on);
+    $('#drawer').setAttribute('aria-hidden', String(!on));
+    $('#scrim').classList.toggle('open', on);
+  }
+  const TITLES = { map: 'Город в движении', lines: 'Маршруты', timetable: 'Расписание' };
+  function show(screen) {
+    ui.screen = screen;
+    document.querySelectorAll('.screen').forEach(function (s) { s.classList.toggle('active', s.id === 'screen-' + screen); });
+    document.querySelectorAll('.nav-item, .bottom-item').forEach(function (b) {
+      const active = b.dataset.screen === screen;
+      b.classList.toggle('on', active);
+      if (active) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    });
+    $('#barTitle').textContent = screen === 'map' && M.focus ? 'Линия ' + M.focus : TITLES[screen];
+    openDrawer(false);
+    closeSheet();
+    setActive();
+    if (screen === 'map') setTimeout(function () { map.invalidateSize(); tick(); }, 50);
+    if (screen === 'lines') renderLines();
+    if (screen === 'timetable') renderTimetable();
+  }
+  ui.show = show;
+  function setActive() { M.active = !document.hidden && (ui.screen === 'map' || ui.screen === 'lines'); }
+
+  /* Android back button: close what is open, else let the app close */
+  ui.back = function () {
+    if ($('#sheet').classList.contains('open')) { closeSheet(); return true; }
+    if ($('#drawer').classList.contains('open')) { openDrawer(false); return true; }
+    if (ui.screen === 'timetable' && ttState.base) { ttState.base = null; renderTimetable(); return true; }
+    if (ui.screen !== 'map') { show('map'); return true; }
+    if (M.focus) { setFocus(null); return true; }
+    return false;
+  };
+
+  // ---------------- map ----------------
+  function initMap() {
+    map = L.map('map', { zoomControl: false, preferCanvas: false, maxZoom: 19, minZoom: 9 }).setView(CENTER, 14);
+    let base, baseTimer;
+    const vectorCredit = '<a href="https://openfreemap.org/">OpenFreeMap</a> &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+    function fallback() {
+      clearTimeout(baseTimer);
+      if (base) { map.removeLayer(base); base = null; }
+      map.attributionControl.removeAttribution(vectorCredit);
+      base = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19, updateWhenIdle: true,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+      }).addTo(map);
+      base.on('tileerror', function () { $('#mapError').classList.remove('hidden'); });
+      base.on('tileload', function () { $('#mapError').classList.add('hidden'); });
+    }
+    function loadBasemap() {
+      clearTimeout(baseTimer);
+      if (base) { map.removeLayer(base); base = null; }
+      $('#mapError').classList.add('hidden');
+      try {
+        base = L.maplibreGL({ style: 'data/map-style.json', interactive: false }).addTo(map);
+        map.attributionControl.addAttribution(vectorCredit);
+        const gl = base.getMaplibreMap();
+        baseTimer = setTimeout(function () { if (!gl.loaded()) fallback(); }, 25000);
+        gl.once('load', function () { clearTimeout(baseTimer); });
+        gl.getCanvas().addEventListener('webglcontextlost', function () { fallback(); }, { once: true });
+      } catch (e) { fallback(); }
+    }
+    $('#mapRetry').onclick = loadBasemap;
+    loadBasemap();
+    map.attributionControl.setPrefix(false);
+    L.control.zoom({ position: 'bottomright', zoomInTitle: 'Приблизить', zoomOutTitle: 'Отдалить' }).addTo(map);
+    canvas = L.canvas({ padding: 0.3 });
+    routeLayer = L.layerGroup().addTo(map);
+    stopLayer = L.layerGroup().addTo(map);
+    busLayer = L.markerClusterGroup({
+      maxClusterRadius: 38, showCoverageOnHover: false, animate: true,
+      animateAddingMarkers: false, removeOutsideVisibleBounds: false,
+      spiderfyOnMaxZoom: false, zoomToBoundsOnClick: false, spiderfyDistanceMultiplier: 1.6,
+      spiderLegPolylineOptions: { color: '#6d9c85', weight: 1.5, opacity: 0.6 },
+      iconCreateFunction: function (cluster) {
+        const children = cluster.getAllChildMarkers();
+        const live = children.some(function (m) { return m._it && m._it.kind === 'gps'; });
+        const count = children.length;
+        const lines = Array.from(new Set(children.map(function (m) { return m._it ? m._it.base : ''; }))).filter(Boolean).sort(function (a,b) { return a.localeCompare(b, undefined, { numeric: true }); });
+        const label = lines.slice(0, 3).join(' · ') + (lines.length > 3 ? ' …' : '');
+        return L.divIcon({ className: 'vehicle-cluster' + (live ? ' live' : ''),
+          html: '<span title="' + esc(count + ' автобусов: ' + lines.join(', ')) + '"><b>' + count + '<small>авто</small></b><em>' + esc(label) + '</em></span>', iconSize: [76, 54], iconAnchor: [38, 27] });
+      }
+    }).addTo(map);
+    map.on('zoomstart', function () { zooming = true; });
+    map.on('zoomend', function () { zooming = false; if (!clusterAnimating) tick(); });
+    busLayer.on('animationend', function () { clusterAnimating = false; });
+    // MarkerCluster's animation is 300 ms. Never reinsert moving buses midway through it.
+    map.on('zoomstart', function () { clusterAnimating = true; });
+    map.on('zoomend', function () { setTimeout(function () { if (!zooming) { clusterAnimating = false; tick(); } }, 350); });
+    busLayer.on('spiderfied', function () { spiderfied = true; });
+    busLayer.on('unspiderfied', function () { spiderfied = false; });
+    busLayer.on('clusterclick', function (e) {
+      if (zooming || clusterAnimating) return;
+      if (map.getZoom() >= 17) e.layer.spiderfy();
+      else e.layer.zoomToBounds({ paddingTopLeft: [42, M.focus ? 138 : 68],
+        paddingBottomRight: [48, panelSpace()], maxZoom: 17 });
+    });
+    function updateArea() {
+      const b = map.getBounds().pad(0.25);
+      M.setViewport({ south: b.getSouth(), north: b.getNorth(), west: b.getWest(), east: b.getEast() });
+      drawStops();
+    }
+    map.on('moveend', updateArea);
+    updateArea();
+  }
+
+  function busHtml(it) {
+    return '<div class="vehicle ' + it.kind + '">' + BUS_SVG + '<b>' + esc(it.base) + '</b></div>';
+  }
+
+  function popupContent(it) {
+    let rows = '<div class="pop-title"><span class="bus ' + it.kind + '">' + esc(it.base) + '</span><span>' +
+      esc(it.title || ('Линия ' + it.base)) + '</span></div>';
+    if (it.dest) rows += '<div class="pop-row">Куда: <b>' + esc(it.dest) + '</b></div>';
+    if (it.line !== it.base) rows += '<div class="pop-row">Вариант: <b>' + esc(it.line) + '</b></div>';
+    rows += '<div class="pop-row">Статус: <b>' + KIND[it.kind] + '</b></div>';
+    if (it.kind !== 'sched') {
+      rows += '<div class="pop-row">Бортовой №: <b>' + esc(it.garage) + '</b></div>';
+      rows += '<div class="pop-row">GPS получен: <b>' + ago(it.age) + '</b></div>';
+    }
+    if (it.next) rows += '<div class="pop-row">Следующая остановка: <b>' + esc(it.next) + '</b></div>';
+    if (it.dep) rows += '<div class="pop-row">Отправление с конечной: <b>' + esc(it.dep) + '</b></div>';
+    if (it.kind === 'sched') rows += '<div class="pop-row" style="margin-top:4px">Реального GPS нет: место рассчитано по расписанию gspns и времени в пути из nsmart.</div>';
+    return rows;
+  }
+  function ago(sec) {
+    if (sec == null) return '—';
+    if (sec < 60) return sec + ' с назад';
+    return Math.floor(sec / 60) + ' мин ' + (sec % 60) + ' с назад';
+  }
+
+  let openPopupId = null;
+  function tick() {
+    if (ui.screen !== 'map' || document.hidden) return;
+    if (zooming || clusterAnimating) return;
+    if (sheetStop && !stopLoading && Date.now() - stopAt >= 20000) loadStop(sheetStop);
+    const now = Date.now();
+    const items = M.snapshot(now);
+    const seen = {};
+    let nG = 0, nE = 0, nS = 0;
+    const changed = [];
+    items.forEach(function (it) {
+      if (it.kind === 'gps') nG++; else if (it.kind === 'est') nE++; else nS++;
+      if (spiderfied) return;
+      if (gpsOnly && it.kind !== 'gps') return;
+      seen[it.id] = 1;
+      let m = markers[it.id];
+      const html = busHtml(it);
+      if (!m) {
+        m = L.marker([it.la, it.lo], {
+          icon: L.divIcon({ className: 'bus-icon vehicle-hit', html: html, iconSize: [56, 48], iconAnchor: [28, 24] }),
+          title: 'Линия ' + it.base + ' · ' + KIND[it.kind],
+          zIndexOffset: it.kind === 'gps' ? 300 : it.kind === 'est' ? 200 : 0
+        });
+        m._html = html;
+        m._it = it;
+        m.on('click', function () {
+          openPopupId = it.id;
+          m.bindPopup(popupContent(m._it), { autoPan: true, offset: [0, -15], maxWidth: Math.min(300, window.innerWidth - 64), autoPanPaddingTopLeft: [16, 190], autoPanPaddingBottomRight: [16, 270] }).openPopup();
+        });
+        m.on('popupclose', function () { if (openPopupId === it.id) openPopupId = null; });
+        m.addTo(busLayer);
+        markers[it.id] = m;
+      } else {
+        // setLatLng emits a move event even for identical coordinates. That event
+        // removes and reinserts the marker in MarkerCluster, causing flicker.
+        if (m.getLatLng().distanceTo([it.la, it.lo]) > 1) m.setLatLng([it.la, it.lo]);
+        if (m._html !== html) {
+          m.setIcon(L.divIcon({ className: 'bus-icon vehicle-hit', html: html, iconSize: [56, 48], iconAnchor: [28, 24] }));
+          m.setZIndexOffset(it.kind === 'gps' ? 300 : it.kind === 'est' ? 200 : 0);
+          m._html = html;
+          changed.push(m);
+        }
+      }
+      m._it = it;
+      if (openPopupId === it.id && m.getPopup()) m.getPopup().setContent(popupContent(it));
+    });
+    Object.keys(markers).forEach(function (id) {
+      if (!spiderfied && !seen[id]) { busLayer.removeLayer(markers[id]); delete markers[id]; }
+    });
+    if (changed.length) busLayer.refreshClusters(changed);
+    $('#nGps').textContent = nG; $('#nEst').textContent = nE; $('#nSched').textContent = nS;
+    statusLine(now);
+  }
+
+  function statusLine(now) {
+    const el = $('#statusLine');
+    const dot = $('#netDot');
+    const fresh = M.lastOkAt && now - M.lastOkAt < 30e3;
+    const offline = !fresh && !!M.lastError;
+    dot.className = 'net-dot ' + (fresh ? 'ok' : M.lastError ? 'err' : '');
+    $('#connectionText').textContent = fresh ? 'На связи' : offline ? 'Нет связи' : 'Подключение';
+    $('#liveBadge').classList.toggle('offline', !fresh);
+    $('#liveBadgeText').textContent = fresh ? 'LIVE' : offline ? 'ОФЛАЙН' : 'ЗАГРУЗКА';
+    let s;
+    if (M.lastError && !fresh) {
+      s = 'Нет связи с NSmart · пробуем подключиться';
+    } else if (!M.lastOkAt) {
+      s = 'Получаем данные о транспорте…';
+    } else {
+      const age = Math.round((now - M.lastOkAt) / 1000);
+      s = 'Обновлено ' + (age < 2 ? 'только что' : age < 60 ? age + ' с назад' : Math.floor(age / 60) + ' мин назад') + ' · NSmart';
+    }
+    if (M.sched.error && !Object.keys(M.sched.tables).length) s += ' · расписание недоступно';
+    el.textContent = s;
+    el.classList.toggle('err', !!(M.lastError && !fresh));
+  }
+
+  // stops: all of them when zoomed in, or the stops of the chosen line
+  function drawStops() {
+    stopLayer.clearLayers();
+    const z = map.getZoom();
+    let ids = [];
+    if (M.focus) {
+      const set = {};
+      M.routesOf(M.focus).forEach(function (r) { r.s.forEach(function (x) { set[x[0]] = 1; }); });
+      ids = Object.keys(set);
+      if (!ids.length && M.lines[M.focus]) ids = M.lines[M.focus].stops;
+      if (z < 13) return;
+    } else {
+      if (z < 15) return;
+      const b = map.getBounds().pad(0.2);
+      ids = Object.keys(M.stations).filter(function (u) {
+        const s = M.stations[u];
+        return s.la != null && b.contains([s.la, s.lo]);
+      }).slice(0, 600);
+    }
+    ids.forEach(function (u) {
+      const s = M.stations[u];
+      if (!s || s.la == null) return;
+      L.circleMarker([s.la, s.lo], { renderer: canvas, radius: 14, stroke: false, fillOpacity: 0 })
+        .on('click', function () { openStop(u); }).addTo(stopLayer);
+      L.circleMarker([s.la, s.lo], { renderer: canvas, radius: z >= 16 ? 6 : 4, color: '#367e72', weight: 2,
+                                     fillColor: '#fff', fillOpacity: 1, interactive: false })
+        .addTo(stopLayer);
+    });
+  }
+
+  function drawRoutes() {
+    routeLayer.clearLayers();
+    if (!M.focus) return null;
+    const bounds = [];
+    M.routesOf(M.focus).forEach(function (r) {
+      const pts = r.s.filter(function (x) { return x[1] != null; }).map(function (x) { return [x[1], x[2]]; });
+      pts.forEach(function (p) { bounds.push(p); });
+      L.polyline(pts, { color: '#fff', weight: 7, opacity: 0.9, interactive: false }).addTo(routeLayer);
+      L.polyline(pts, { color: r.dir === 'B' ? '#83ae42' : '#278d9b', weight: 3, opacity: 0.8 }).addTo(routeLayer);
+    });
+    if (!bounds.length && M.lines[M.focus]) {
+      M.lines[M.focus].stops.forEach(function (u) { const s = M.stations[u]; if (s && s.la != null) bounds.push([s.la, s.lo]); });
+    }
+    return bounds.length ? L.latLngBounds(bounds) : null;
+  }
+
+  function lineName(b) {
+    let name = null;
+    Object.values(M.sched.tables).forEach(function (t) {
+      (t.options || []).forEach(function (o) {
+        if (o.value.replace(/[.*]+$/, '') === b) name = o.label.replace(/^\S+\s*/, '');
+      });
+    });
+    if (name) return name;
+    const r = M.routesOf(b)[0];
+    return r ? (r.title || r.dest || '') : '';
+  }
+  ui.lineName = lineName;
+
+  function setFocus(b) {
+    M.setFocus(b);
+    $('#focusChip').classList.toggle('hidden', !b);
+    $('#screen-map').classList.toggle('has-focus', !!b);
+    $('#statusEyebrow').textContent = b ? 'ВЫБРАННЫЙ МАРШРУТ' : 'ТРАНСПОРТ ГОРОДА';
+    $('#statusTitle').textContent = b ? 'Автобус ' + b : 'На карте сейчас';
+    $('#chooseLineText').textContent = b ? 'Расписание маршрута' : 'Выбрать маршрут';
+    if (b) {
+      $('#focusNum').textContent = b;
+      $('#focusNum').className = 'bus gps';
+      $('#focusName').textContent = lineName(b) || 'Линия ' + b;
+    }
+    $('#barTitle').textContent = b ? 'Линия ' + b : TITLES.map;
+    Object.keys(markers).forEach(function (id) { busLayer.removeLayer(markers[id]); delete markers[id]; });
+    const bounds = drawRoutes();
+    if (b && bounds) map.fitBounds(bounds, { paddingTopLeft: [32, 138], paddingBottomRight: [60, panelSpace()], maxZoom: 15 });
+    drawStops();
+    tick();
+  }
+  ui.setFocus = setFocus;
+
+  // ---------------- stop sheet: when is the next bus ----------------
+  function openStop(uid) {
+    sheetStop = uid;
+    $('#screen-map').classList.add('has-stop');
+    const s = M.stations[uid] || {};
+    $('#sheetTitle').textContent = s.n || ('Остановка ' + uid);
+    $('#sheetSub').textContent = (s.c ? 'Код ' + s.c + ' · ' : '') + 'линии: ' + (s.l || []).join(', ');
+    $('#sheetBody').innerHTML = '<div class="empty">Спрашиваю nsmart…</div>';
+    $('#sheet').classList.add('open');
+    $('#sheet').setAttribute('aria-hidden', 'false');
+    loadStop(uid);
+  }
+  async function loadStop(uid) {
+    if (stopLoading) return;
+    stopLoading = true;
+    let res;
+    try { res = await M.arrivals(uid); } catch (e) { res = { error: { message: String(e) }, list: [] }; }
+    stopLoading = false; stopAt = Date.now();
+    if (sheetStop !== uid) { if (sheetStop) loadStop(sheetStop); return; }
+    const body = $('#sheetBody');
+    let html = '';
+    if (res.error) html += '<div class="err-box">nsmart не ответил (' + esc(res.error.message || res.error.type) + '). Показываю расчёт.</div>';
+    const list = res.list.filter(function (a) { return !M.focus || a.base === M.focus; });
+    if (!list.length) html += '<div class="empty">В ближайший час автобусов не видно.</div>';
+    list.slice(0, 30).forEach(function (a) {
+      const min = Math.floor(a.eta / 60);
+      const eta = a.eta < 60 ? 'сейчас' : min + ' мин';
+      const sub = a.kind === 'gps' ? 'GPS' + (a.between != null ? ' · ' + a.between + ' ост. до вас' : '')
+        : a.kind === 'est' ? 'расчёт по памяти' : 'по расписанию, отпр. ' + a.dep;
+      html += '<div class="arr"><span class="bus ' + a.kind + '">' + esc(a.base) + '</span>' +
+        '<div class="arr-dest">' + esc(a.dest || '') + '<small>' + esc(a.line !== a.base ? a.line + ' · ' : '') + sub + '</small></div>' +
+        '<div class="arr-eta">' + eta + '<small>' + T.hhmm(res.at + a.eta * 1000) + '</small></div></div>';
+    });
+    body.innerHTML = html;
+    $('#sheetSub').textContent = 'Обновлено ' + T.hhmm(res.at) + ' · нажмите ⟳, чтобы обновить';
+  }
+  function closeSheet() {
+    sheetStop = null;
+    $('#screen-map').classList.remove('has-stop');
+    $('#sheet').classList.remove('open');
+    $('#sheet').setAttribute('aria-hidden', 'true');
+  }
+
+  // ---------------- lines screen ----------------
+  function renderLines() {
+    const q = ($('#lineSearch').value || '').trim().toLowerCase();
+    const counts = {};
+    M.snapshot(Date.now()).forEach(function (it) { if (it.kind !== 'sched') counts[it.base] = (counts[it.base] || 0) + 1; });
+    const all = M.lineList().filter(function (l) {
+      if (!q) return true;
+      return l.base.toLowerCase().indexOf(q) === 0 || lineName(l.base).toLowerCase().indexOf(q) >= 0 ||
+        l.variants.some(function (v) { return v.toLowerCase() === q; });
+    });
+    const groups = [['Городские', all.filter(function (l) { return l.city; })],
+                    ['Пригородные', all.filter(function (l) { return !l.city; })]];
+    let html = '';
+    groups.forEach(function (g) {
+      if (!g[1].length) return;
+      html += '<div class="group-title">' + g[0] + ' (' + g[1].length + ')</div><div class="line-grid">';
+      g[1].forEach(function (l) {
+        const n = counts[l.base] || 0;
+        const vars = l.variants.filter(function (v) { return v !== l.base; });
+        html += '<button class="line-card" data-base="' + esc(l.base) + '">' +
+          '<span class="line-num' + (l.city ? '' : ' sub') + '">' + esc(l.base) + '</span>' +
+          '<span class="line-text"><div class="line-name">' + esc(lineName(l.base) || 'Линия ' + l.base) + '</div>' +
+          '<div class="line-meta">' + l.stops.length + ' остановок' + (vars.length ? ' · варианты: ' + esc(vars.join(', ')) : '') + '</div></span>' +
+          (n ? '<span class="line-live">' + n + '<br>в пути</span>' : '') + '</button>';
+      });
+      html += '</div>';
+    });
+    $('#linesList').innerHTML = html || '<div class="empty">Ничего не найдено</div>';
+  }
+
+  // ---------------- timetable screen ----------------
+  const DAY_RU = { R: 'Будний день', S: 'Суббота', N: 'Воскресенье', P: 'Праздник' };
+  function todayType() { return M.dayTypeFor(T.isoDay(T.bg(Date.now()))); }
+
+  async function renderTimetable(force) {
+    const body = $('#ttBody');
+    if (!ttState.dan) ttState.dan = todayType();
+    const sel = $('#ttDay');
+    sel.innerHTML = G.DAY_TYPES.map(function (d) {
+      return '<option value="' + d + '"' + (d === ttState.dan ? ' selected' : '') + '>' + DAY_RU[d] + (d === todayType() ? ' (сегодня)' : '') + '</option>';
+    }).join('');
+    document.querySelectorAll('#ttRv button').forEach(function (b) { b.classList.toggle('on', b.dataset.rv === ttState.rv); });
+    body.innerHTML = '<div class="empty">Загружаю расписание с gspns.rs…</div>';
+    let tbl;
+    const want = ttState.rv + '|' + ttState.dan;
+    try { tbl = await M.ensureTables(ttState.rv, ttState.dan, force); } catch (e) {
+      body.innerHTML = '<div class="err-box">Не удалось загрузить расписание: ' + esc(e.message || e) +
+        '</div><button class="btn" id="ttRetry">Повторить</button>';
+      $('#ttRetry').onclick = function () { renderTimetable(true); };
+      return;
+    }
+    if (ui.screen !== 'timetable' || want !== ttState.rv + '|' + ttState.dan) return;
+    if (ttState.base && tbl.lines[ttState.base]) return renderLineTable(tbl);
+    ttState.base = null;
+    let html = '<div class="tt-note">Официальное расписание gspns.rs (ДП «Градски саобраћај» Нови-Сад), действует с ' +
+      esc(tbl.vaziod) + '. Время — отправление с конечной.</div><div class="line-grid">';
+    tbl.options.forEach(function (o) {
+      const b = o.value.replace(/[.*]+$/, '');
+      const has = !!tbl.lines[b];
+      html += '<button class="line-card" data-tt="' + esc(b) + '"' + (has ? '' : ' disabled style="opacity:.5"') + '>' +
+        '<span class="line-num' + (ttState.rv === 'rvg' ? '' : ' sub') + '">' + esc(b) + '</span>' +
+        '<span class="line-text"><div class="line-name">' + esc(o.label.replace(/^\S+\s*/, '')) + '</div>' +
+        '<div class="line-meta">' + (has ? tbl.lines[b].directions.map(function (d) { return d.departures.length; }).join(' + ') + ' отправлений' : 'нет рейсов') + '</div></span></button>';
+    });
+    html += '</div><div class="tt-note">Загружено ' + new Date(tbl.fetched).toLocaleString('ru-RU') +
+      ' · <a href="#" id="ttReload">обновить</a></div>';
+    body.innerHTML = html;
+    $('#ttReload').onclick = function (e) { e.preventDefault(); renderTimetable(true); };
+  }
+
+  function renderLineTable(tbl) {
+    const t = tbl.lines[ttState.base];
+    const body = $('#ttBody');
+    const isToday = ttState.dan === todayType();
+    const now = T.bg(Date.now());
+    const nowMin = now.hh * 60 + now.mm;
+    let html = '<button class="tt-back" id="ttBack">‹ Все линии</button>' +
+      '<div class="tt-head"><span class="line-num' + (ttState.rv === 'rvg' ? '' : ' sub') + '">' + esc(ttState.base) + '</span>' +
+      '<div class="tt-title">' + esc(t.title.replace(/^\S+\s*/, '')) + '</div></div>' +
+      '<div class="tt-actions"><button class="btn" id="ttMap">Показать на карте</button></div>';
+    t.directions.forEach(function (d) {
+      const x = G.expandDepartures(d.departures);
+      let nextIdx = -1;
+      if (isToday) nextIdx = x.findIndex(function (q) { return q[0] * 1440 + q[1] * 60 + q[2] >= nowMin; });
+      html += '<div class="dir-card"><div class="dir-name">' + esc(d.header.replace(/^(Smer|Смер)\s+([ABАБ]):\s*/, 'Направление $2: ')) + '</div>';
+      let hour = null, row = '';
+      x.forEach(function (q, i) {
+        if (q[1] !== hour) {
+          if (row) html += row + '</div></div>';
+          hour = q[1];
+          row = '<div class="hour-row"><div class="hour">' + String(hour).padStart(2, '0') + '</div><div class="mins">';
+        }
+        const cls = isToday ? (i === nextIdx ? 'next' : (nextIdx < 0 || i < nextIdx ? 'past' : '')) : '';
+        row += '<span class="' + cls + '">' + String(q[2]).padStart(2, '0') + (q[3] ? '<sup>' + esc(q[3]) + '</sup>' : '') + '</span>';
+      });
+      if (row) html += row + '</div></div>';
+      if (!x.length) html += '<div class="empty">Нет отправлений</div>';
+      html += '</div>';
+    });
+    if (t.legend) html += '<div class="legend"><b>Обозначения:</b> ' + esc(t.legend) + '</div>';
+    if (isToday) html += '<div class="legend">Зелёным — ближайшее отправление, серым — уже ушедшие.</div>';
+    body.innerHTML = html;
+    body.scrollTop = 0;
+    $('#ttBack').onclick = function () { ttState.base = null; renderTimetable(); };
+    $('#ttMap').onclick = function () { const b = ttState.base; show('map'); setFocus(b); };
+    const nx = body.querySelector('.next');
+    if (nx) setTimeout(function () { nx.scrollIntoView({ block: 'center' }); }, 50);
+  }
+
+  // ---------------- my location ----------------
+  function locate() {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(function (p) {
+      const ll = [p.coords.latitude, p.coords.longitude];
+      if (!meMarker) meMarker = L.marker(ll, { icon: L.divIcon({ className: 'bus-icon', html: '<div class="me-dot"></div>', iconSize: [0, 0] }), zIndexOffset: 1000 }).addTo(map);
+      else meMarker.setLatLng(ll);
+      map.setView(ll, Math.max(map.getZoom(), 16));
+    }, function (e) {
+      $('#statusLine').textContent = 'Не удалось узнать местоположение: ' + (e.message || e.code);
+    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
+  }
+
+  // ---------------- wiring ----------------
+  function panelSpace() {
+    return (panelCollapsed ? 90 : $('#status').offsetHeight) + 30;
+  }
+  function wirePanel() {
+    const card = $('#status'), toggle = $('#statusToggle'), details = $('#statusDetails');
+    let drag = null, suppressClick = false;
+    function measure() {
+      card.style.setProperty('--panel-shift', Math.max(0, card.offsetHeight - 90) + 'px');
+      $('#screen-map').style.setProperty('--panel-space', panelSpace() + 'px');
+    }
+    function settle(collapsed) {
+      panelCollapsed = collapsed;
+      card.classList.toggle('collapsed', collapsed);
+      toggle.setAttribute('aria-expanded', String(!collapsed));
+      toggle.setAttribute('aria-label', collapsed ? 'Развернуть панель транспорта' : 'Свернуть панель транспорта');
+      details.inert = collapsed;
+      details.setAttribute('aria-hidden', String(collapsed));
+      card.style.transform = ''; card.classList.remove('dragging');
+      measure();
+    }
+    toggle.onclick = function () { if (suppressClick) { suppressClick = false; return; } settle(!panelCollapsed); };
+    card.addEventListener('pointerdown', function (e) {
+      if (!e.isPrimary || (e.button != null && e.button !== 0) || !e.target.closest('.status-toggle, .status-heading')) return;
+      const handle = e.target.closest('.status-toggle, .status-heading');
+      drag = { id: e.pointerId, handle: handle, y: e.clientY, start: panelCollapsed ? Math.max(0, card.offsetHeight - 90) : 0, moved: false };
+      handle.setPointerCapture(e.pointerId);
+    });
+    card.addEventListener('pointermove', function (e) {
+      if (!drag || e.pointerId !== drag.id) return;
+      const dy = e.clientY - drag.y;
+      if (Math.abs(dy) > 5) drag.moved = true;
+      if (!drag.moved) return;
+      card.classList.add('dragging');
+      card.style.transform = 'translateY(' + Math.max(0, Math.min(card.offsetHeight - 90, drag.start + dy)) + 'px)';
+    });
+    function finish(e) {
+      if (!drag || e.pointerId !== drag.id) return;
+      const dy = e.clientY - drag.y, moved = drag.moved, handle = drag.handle;
+      drag = null;
+      if (handle.hasPointerCapture(e.pointerId)) handle.releasePointerCapture(e.pointerId);
+      if (moved) { suppressClick = true; settle(e.type === 'pointercancel' ? panelCollapsed : Math.abs(dy) > 28 ? dy > 0 : panelCollapsed); setTimeout(function () { suppressClick = false; }, 0); }
+      else { card.style.transform = ''; card.classList.remove('dragging'); }
+    }
+    card.addEventListener('pointerup', finish); card.addEventListener('pointercancel', finish);
+    new ResizeObserver(measure).observe(card);
+    settle(false);
+  }
+  function wire() {
+    wirePanel();
+    $('#menuBtn').onclick = function () { openDrawer(!$('#drawer').classList.contains('open')); };
+    $('#scrim').onclick = function () { openDrawer(false); };
+    document.querySelectorAll('.nav-item, .bottom-item').forEach(function (b) {
+      b.onclick = function () {
+        show(b.dataset.screen);
+      };
+    });
+    $('#catCity').onchange = $('#catSub').onchange = function () {
+      M.setCats({ city: $('#catCity').checked, sub: $('#catSub').checked });
+      T.store.set('cats', M.cats);
+      tick();
+    };
+    $('#focusClear').onclick = function () { setFocus(null); };
+    $('#locateBtn').onclick = locate;
+    $('#chooseLine').onclick = function () {
+      if (M.focus) { ttState.base = M.focus; ttState.rv = M.isCity(M.focus) ? 'rvg' : 'rvp'; show('timetable'); }
+      else show('lines');
+    };
+    function setGpsFilter(on) {
+      busLayer.unspiderfy(); spiderfied = false;
+      gpsOnly = on;
+      $('#filterAll').classList.toggle('on', !on); $('#filterGps').classList.toggle('on', on);
+      $('#filterAll').setAttribute('aria-pressed', String(!on)); $('#filterGps').setAttribute('aria-pressed', String(on));
+      tick();
+    }
+    $('#filterAll').onclick = function () { setGpsFilter(false); };
+    $('#filterGps').onclick = function () { setGpsFilter(true); };
+    $('#overviewBtn').onclick = function () { map.setView(CENTER, 14); };
+    $('#sheetClose').onclick = closeSheet;
+    $('#sheetRefresh').onclick = function () { if (sheetStop) { $('#sheetBody').innerHTML = '<div class="empty">Спрашиваю nsmart…</div>'; loadStop(sheetStop); } };
+    $('#lineSearch').oninput = renderLines;
+    $('#linesList').onclick = function (e) {
+      const c = e.target.closest('[data-base]');
+      if (!c) return;
+      show('map');
+      setFocus(c.dataset.base);
+    };
+    $('#ttRv').onclick = function (e) {
+      const b = e.target.closest('button');
+      if (!b) return;
+      ttState.rv = b.dataset.rv; ttState.base = null; renderTimetable();
+    };
+    $('#ttDay').onchange = function () { ttState.dan = this.value; renderTimetable(); };
+    $('#ttBody').onclick = function (e) {
+      const c = e.target.closest('[data-tt]');
+      if (!c || c.disabled) return;
+      ttState.base = c.dataset.tt;
+      renderTimetable();
+    };
+    document.addEventListener('visibilitychange', function () { setActive(); if (!document.hidden) tick(); });
+    // links inside popups / attribution open in the system browser (Android handles it)
+  }
+
+  async function start() {
+    initMap();
+    wire();
+    const cats = T.store.get('cats', null);
+    if (cats) { M.cats = cats; $('#catCity').checked = cats.city; $('#catSub').checked = cats.sub; }
+    try { await M.init(); } catch (e) { $('#statusLine').textContent = 'Ошибка запуска: ' + (e.message || e); }
+    $('#splash').classList.add('gone');
+    // deep links (used for previews on the PC): #screen=lines, #screen=timetable, #drawer, #focus=14
+    const h = location.hash || '';
+    const ms = /screen=(\w+)/.exec(h), mf = /focus=([\w"]+)/.exec(h);
+    if (ms && TITLES[ms[1]]) show(ms[1]);
+    if (mf) setFocus(decodeURIComponent(mf[1]));
+    if (/drawer/.test(h)) openDrawer(true);
+    setActive();
+    tick();
+    setInterval(tick, 1000);
+    let lastRoutes = 0;
+    M.on(function (what) {
+      if (what === 'schedule' && ui.screen === 'lines') renderLines();
+      if (what === 'poll' && M.focus && Date.now() - lastRoutes > 30e3) { lastRoutes = Date.now(); drawRoutes(); }
+      if (what === 'stations') { drawStops(); if (ui.screen === 'lines') renderLines(); }
+    });
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+})(globalThis.T = globalThis.T || {});

@@ -1,0 +1,11 @@
+Trecker NS bundles these open source libraries and assets:
+
+MapLibre GL JS 4.7.1, BSD-3-Clause (maplibre/LICENSE.txt).
+MapLibre GL Leaflet 0.0.22, ISC (maplibre/leaflet-LICENSE).
+Leaflet.markercluster 1.5.3, MIT (markercluster/LICENSE).
+Manrope variable font, SIL Open Font License 1.1 (fonts/OFL.txt).
+
+The River map style is derived from the OpenFreeMap Positron style:
+https://tiles.openfreemap.org/styles/positron
+Map tiles: OpenFreeMap / OpenMapTiles, data copyright OpenStreetMap contributors.
+Map attribution is displayed in the map and links to the providers.
