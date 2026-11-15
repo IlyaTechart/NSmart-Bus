@@ -213,10 +213,11 @@
     let n = 0;
     (buses || []).forEach(function (b) {
       if (b.planned || !b.line) return;
+      const v = M.vehicles[b.garage];
+      if (v && now < v.obsAt) return; // A cached stop must not replace a newer observation from another stop.
       const rk = learnRoute(b, now);
       const sig = [b.line, b.dep, b.lat, b.lng, b.next].join('|');
-      const v = M.vehicles[b.garage];
-      if (v && v.sig === sig) { v.seenAt = now; return; }   // same snapshot again: keep counting from the first time
+      if (v && v.sig === sig) { v.seenAt = Math.max(v.seenAt, now); return; }   // same snapshot again: keep counting from the first time
       const nv = { g: b.garage, line: b.line, base: G.base(b.line), dir: b.dir, actual: b.actual, dest: b.dest,
                    title: b.title, dep: b.dep, lat: b.lat, lng: b.lng, cur: b.cur, next: b.next, rk: rk,
                    slr: b.stops.map(function (x) { return x[4]; }), obsAt: now, seenAt: now, sig: sig };
@@ -456,15 +457,20 @@
   M.arrivals = async function (uid) {
     const r = await N.fetchStop(uid);
     const now = Date.now();
+    const receivedAt = r.receivedAt || now;
     prune(now);
     const out = [];
     const seen = {};
     if (!r.error) {
-      M.observe(r.buses, now);
+      M.observe(r.buses, receivedAt);
+      M.lastOkAt = Math.max(M.lastOkAt, receivedAt); M.lastError = null;
       r.buses.forEach(function (b) {
         if (b.planned) return;
+        const known = M.vehicles[b.garage];
+        if (known && known.obsAt > receivedAt) return;
         seen[b.garage] = 1;
-        out.push({ kind: 'gps', base: G.base(b.line), line: b.line, dest: b.dest, eta: b.seconds,
+        out.push({ kind: known && M.isFresh(known, now) ? 'gps' : 'est', base: G.base(b.line), line: b.line, dest: b.dest,
+                   eta: Math.max(0, b.seconds - Math.floor((now - receivedAt) / 1000)),
                    between: b.between, garage: b.garage, dep: b.dep && b.dep !== '00:00:00' ? b.dep.slice(0, 5) : null });
       });
     }
@@ -495,7 +501,8 @@
                  dep: T.hhmm(t.depTs) });
     });
     out.sort(function (a, b) { return a.eta - b.eta; });
-    return { name: (r && r.name) || stationName(uid), error: r.error || null, list: out, at: now };
+    return { name: (r && r.name) || stationName(uid), error: r.error || null, list: out, at: now,
+      dataAt: receivedAt, cached: !!r.cached };
   };
 
   // ---------------- polling plan ----------------
@@ -597,6 +604,7 @@
     looping = true;
     while (true) {
       if (!M.active) { await T.sleep(1000); continue; }
+      if (N.gate.backoffMs() > 0) { await T.sleep(Math.min(1000, N.gate.backoffMs())); continue; }
       if (M.qi >= M.queue.length) {
         // At least 40 seconds per sweep; wake frequently so focus/pause changes take effect.
         if (M.queue.length && Date.now() - M.cycleStart < 40000) {
@@ -611,14 +619,16 @@
       M.polledAt[uid] = Date.now();
       let r;
       try { r = await N.fetchStop(uid); } catch (e) { r = { error: { type: 'network', message: String(e) } }; }
-      M.requests++;
+      if (r.fromNetwork) M.requests++;
       if (r.error) {
-        if (!r.error.missing) M.lastError = 'nsmart: ' + (r.error.message || r.error.type + (r.error.status ? ' ' + r.error.status : ''));
+        if (!r.error.missing && r.error.type !== 'paused') M.lastError = 'nsmart: ' + (r.error.message || r.error.type + (r.error.status ? ' ' + r.error.status : ''));
       } else {
-        M.lastOkAt = Date.now(); M.lastError = null;
-        M.observe(r.buses, Date.now());
+        const receivedAt = r.receivedAt || Date.now();
+        M.lastOkAt = Math.max(M.lastOkAt, receivedAt); M.lastError = null;
+        M.observe(r.buses, receivedAt);
       }
       emit('poll');
+      if (!r.fromNetwork) await T.sleep(250);
     }
   }
 

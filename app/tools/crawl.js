@@ -1,5 +1,5 @@
 /* Builds www/data/seed.js: the nsmart stop list + routes learned from live answers, so the app knows every route
- * from its first start. Uses the same engine code as the app. Polite: 1 nsmart request per second.
+ * from its first start. Uses the app's shared request budget and backoff.
  *   node tools/crawl.js [passes=2] [stations.json]
  */
 const fs = require('fs'), path = require('path'), vm = require('vm');
@@ -12,7 +12,6 @@ const T = globalThis.T, M = T.model, N = T.nsmart;
   const stFile = process.argv[3];
   const seedFile = path.join(WWW, 'data', 'seed.js');
   if (fs.existsSync(seedFile)) vm.runInThisContext(fs.readFileSync(seedFile, 'utf8'));   // continue a previous crawl
-  N.gate.minMs = 1000;
   if (stFile) M.stations = N.compactStations(JSON.parse(fs.readFileSync(stFile, 'utf8')));
   else if (T.SEED && T.SEED.stations) M.stations = T.SEED.stations;
   else M.stations = await N.fetchStations();

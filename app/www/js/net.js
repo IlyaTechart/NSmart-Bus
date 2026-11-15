@@ -7,11 +7,11 @@
   const pending = {};
 
   // called by Java: AndroidNet answers asynchronously
-  globalThis.__httpDone = function (id, status, text) {
+  globalThis.__httpDone = function (id, status, text, retryAfter) {
     const cb = pending[id];
     if (!cb) return;
     delete pending[id];
-    cb(status, text);
+    cb(status, text, retryAfter);
   };
 
   T.http = function (method, url, body, headers, timeoutMs) {
@@ -23,11 +23,11 @@
         const watchdog = setTimeout(function () {
           if (!pending[id]) return;
           delete pending[id];
-          reject(new Error('????????? ????? ???????? ????'));
+          reject(new Error('Истекло время ожидания сети'));
         }, timeoutMs + 2000);
-        pending[id] = function (status, text) {
+        pending[id] = function (status, text, retryAfter) {
           clearTimeout(watchdog);
-          if (status > 0) resolve({ status: status, text: text });
+          if (status > 0) resolve({ status: status, text: text, retryAfter: retryAfter || null });
           else reject(new Error(text || 'network error'));
         };
         try { nb.request(id, method, url, body || '', JSON.stringify(headers || {}), timeoutMs); }
@@ -39,7 +39,7 @@
       fetch(url, { method: method, body: method === 'POST' ? body : undefined,
                    headers: Object.assign({ 'User-Agent': 'Mozilla/5.0 (Trecker)' }, headers || {}),
                    signal: ctl ? ctl.signal : undefined })
-        .then(function (r) { return r.text().then(function (t) { resolve({ status: r.status, text: t }); }); })
+        .then(function (r) { return r.text().then(function (t) { resolve({ status: r.status, text: t, retryAfter: r.headers.get('Retry-After') }); }); })
         .catch(reject)
         .finally(function () { clearTimeout(timer); });
     });

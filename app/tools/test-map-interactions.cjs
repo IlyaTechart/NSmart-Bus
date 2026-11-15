@@ -6,6 +6,7 @@ const fs = require('fs'), path = require('path'), assert = require('assert');
   try {
     const page = await browser.newPage({ viewport: { width: 412, height: 892 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
     const errors = []; page.on('pageerror', e => errors.push(e.message));
+    await require('./offline-ui.cjs')(page);
     // Observe the real Leaflet instances without shipping test accessors in the app.
     await page.route('**/js/ui.js', route => route.fulfill({ contentType: 'application/javascript', body:
       fs.readFileSync(path.join(__dirname, '../www/js/ui.js'), 'utf8').replace('map = L.map(', 'map = window.testMap = L.map(')

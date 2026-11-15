@@ -9,33 +9,77 @@
   function num(v) { const x = parseFloat(v); return isFinite(x) ? x : null; }
   function int(v) { const x = parseInt(v, 10); return isFinite(x) ? x : null; }
 
-  /* Global pacing for every nsmart request (like NStupido's Gate): one request at a time, at least `minMs`
-   * apart, exponential backoff 5 s .. 180 s after a failure, the first success resets it. */
-  function Gate(minMs) {
-    this.minMs = minMs; this.next = 0; this.failures = 0; this.chain = Promise.resolve(); this.requests = 0;
+  // One budget for map polling, stop sheets and station downloads on this client.
+  // This is our conservative policy, not a published NSmart quota.
+  const POLICY = { minMs: 3000, maxRequests: 20, windowMs: 60000, cacheMs: 30000 };
+  function Gate(minMs, storeKey) {
+    this.minMs = minMs || POLICY.minMs; this.storeKey = storeKey;
+    const saved = storeKey && T.store && T.store.get(storeKey, {});
+    this.starts = saved && Array.isArray(saved.starts) ? saved.starts.filter(function (t) { return Number.isFinite(t); }).slice(-20) : [];
+    this.blockedUntil = saved && Number.isFinite(saved.blockedUntil) ? saved.blockedUntil : 0;
+    this.failures = saved && saved.failures || 0;
+    this.rateFailures = saved && saved.rateFailures || 0;
+    this.chain = Promise.resolve(); this.requests = 0;
   }
-  Gate.prototype.backoffMs = function () {
-    return this.failures ? Math.min(180000, 5000 * Math.pow(2, this.failures - 1)) : 0;
+  Gate.prototype.save = function () {
+    if (this.storeKey && T.store) T.store.set(this.storeKey, { starts: this.starts, blockedUntil: this.blockedUntil,
+      failures: this.failures, rateFailures: this.rateFailures });
   };
+  Gate.prototype.readyAt = function () {
+    const now = Date.now();
+    this.starts = this.starts.filter(function (t) { return t > now - POLICY.windowMs; });
+    const last = this.starts[this.starts.length - 1];
+    return Math.max(this.blockedUntil, last == null ? 0 : last + Math.max(POLICY.minMs, this.minMs),
+      this.starts.length >= POLICY.maxRequests ? this.starts[0] + POLICY.windowMs : 0);
+  };
+  Gate.prototype.backoffMs = function () { return Math.max(0, this.blockedUntil - Date.now()); };
   Gate.prototype.run = function (fn) {
     const self = this;
     const p = this.chain.then(async function () {
-      const wait = self.next - Date.now();
-      if (wait > 0) await T.sleep(wait);
-      self.next = Date.now() + self.minMs;
+      while (true) {
+        if (T.model && !T.model.active) return { error: { type: 'paused' } };
+        if (self.blockedUntil > Date.now()) return { error: { type: 'cooldown', retryAt: self.blockedUntil } };
+        const wait = self.readyAt() - Date.now();
+        if (wait <= 0) break;
+        await T.sleep(Math.min(wait, 1000));
+      }
+      self.starts.push(Date.now()); self.save();
       self.requests++;
-      return fn();
+      try { return await fn(); }
+      catch (e) { self.failure(); throw e; }
     });
     this.chain = p.catch(function () {});
     return p;
   };
-  Gate.prototype.failure = function () {
+  Gate.prototype.failure = function (status, retryAfter) {
     this.failures++;
-    this.next = Math.max(this.next, Date.now() + this.backoffMs());
+    const now = Date.now(), restricted = status === 429 || status === 403;
+    if (restricted) this.rateFailures++;
+    let delay = restricted ? Math.min(1800000, 300000 * Math.pow(2, Math.min(4, this.rateFailures - 1)))
+      : Math.min(300000, 15000 * Math.pow(2, Math.min(5, this.failures - 1)));
+    if (retryAfter != null && String(retryAfter).trim()) {
+      const text = String(retryAfter).trim();
+      const serverDelay = /^\d+$/.test(text) ? Number(text) * 1000 : Date.parse(text) - now;
+      if (Number.isFinite(serverDelay)) delay = Math.max(delay, serverDelay);
+    }
+    this.blockedUntil = Math.max(this.blockedUntil, now + delay); this.save();
   };
-  Gate.prototype.success = function () { this.failures = 0; };
+  Gate.prototype.success = function () { this.failures = 0; this.rateFailures = 0; this.blockedUntil = 0; this.save(); };
 
-  const gate = new Gate(600);
+  const gate = new Gate(POLICY.minMs, 'nsmart_budget_v1');
+  const stopCache = new Map(), pendingStops = new Map();
+  let pendingStations = null;
+  async function request(url, body, timeout) {
+    let r;
+    try { r = await T.http('POST', url, body, HDR, timeout); }
+    catch (e) { gate.failure(); return { error: { type: 'network', message: String(e && e.message || e) }, fromNetwork: true }; }
+    if (r.status !== 200) {
+      gate.failure(r.status, r.retryAfter);
+      return { error: { type: 'http', status: r.status, retryAt: gate.blockedUntil }, fromNetwork: true };
+    }
+    try { return { data: JSON.parse(r.text), receivedAt: Date.now(), fromNetwork: true }; }
+    catch (e) { gate.failure(); return { error: { type: 'bad_response' }, fromNetwork: true }; }
+  }
 
   /* One raw response -> {name, buses:[...]} or {error}. Each bus keeps its whole route (all_stations) with
    * coordinates, scheduled minutes from the terminal (tt) and seconds the bus needs to reach each stop (slr). */
@@ -75,23 +119,26 @@
     return out;
   }
 
-  async function fetchStop(uid) {
+  function fetchStop(uid) {
+    uid = String(uid);
+    const cached = stopCache.get(uid);
+    if (cached && Date.now() - cached.receivedAt < POLICY.cacheMs) return Promise.resolve(Object.assign({}, cached, { cached: true, fromNetwork: false }));
+    if (pendingStops.has(uid)) return pendingStops.get(uid);
     const body = 'station_uid=' + encodeURIComponent(uid) + '&ibfm=TS001831&direction=2&company_info_id=216&radius=';
-    return gate.run(async function () {
-      let r;
-      try {
-        r = await T.http('POST', API, body, HDR, 15000);
-      } catch (e) {
-        gate.failure();
-        return { error: { type: 'network', message: String(e && e.message || e) } };
-      }
-      if (r.status !== 200) { gate.failure(); return { error: { type: 'http', status: r.status } }; }
-      let d;
-      try { d = JSON.parse(r.text); } catch (e) { gate.failure(); return { error: { type: 'bad_response' } }; }
-      const res = parse(String(uid), d);
+    const p = gate.run(async function () {
+      const r = await request(API, body, 15000);
+      if (r.error) return r;
+      const res = Object.assign(parse(uid, r.data), { receivedAt: r.receivedAt, fromNetwork: true });
       if (res.error && !res.error.missing) gate.failure(); else gate.success();
+      if (!res.error || res.error.missing) {
+        stopCache.delete(uid); stopCache.set(uid, res);
+        if (stopCache.size > 128) stopCache.delete(stopCache.keys().next().value);
+      }
       return res;
     });
+    pendingStops.set(uid, p);
+    p.then(function () { pendingStops.delete(uid); }, function () { pendingStops.delete(uid); });
+    return p;
   }
 
   /* getAllStations (~1.5 MB) -> {uid: {n name, c code, la, lo, l [lines], t {line: line_type}}} */
@@ -110,16 +157,23 @@
     return out;
   }
 
-  async function fetchStations() {
-    return gate.run(async function () {
-      const r = await T.http('POST', STATIONS_URL, '', { 'X-Requested-With': 'XMLHttpRequest' }, 60000);
-      if (r.status !== 200) throw new Error('HTTP ' + r.status);
-      const st = compactStations(JSON.parse(r.text));
-      if (Object.keys(st).length < 100) throw new Error('too few stations');
+  function fetchStations() {
+    if (pendingStations) return pendingStations;
+    pendingStations = gate.run(async function () {
+      const r = await request(STATIONS_URL, '', 60000);
+      if (r.error) return r;
+      const st = compactStations(r.data);
+      if (Object.keys(st).length < 100) { gate.failure(); return { error: { type: 'bad_response' } }; }
+      gate.success();
       return st;
+    }).then(function (result) {
+      if (result.error) throw new Error(result.error.type + (result.error.status ? ' HTTP ' + result.error.status : ''));
+      return result;
     });
+    pendingStations.then(function () { pendingStations = null; }, function () { pendingStations = null; });
+    return pendingStations;
   }
 
   T.nsmart = { parse: parse, fetchStop: fetchStop, fetchStations: fetchStations, compactStations: compactStations,
-               gate: gate, Gate: Gate };
+               gate: gate, Gate: Gate, policy: POLICY };
 })(globalThis.T = globalThis.T || {});

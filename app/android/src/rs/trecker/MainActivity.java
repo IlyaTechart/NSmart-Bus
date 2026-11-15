@@ -64,7 +64,7 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(true);
         s.setBuiltInZoomControls(false);
         s.setSupportZoom(false);
-        s.setUserAgentString(s.getUserAgentString() + " Trecker/1.2");
+        s.setUserAgentString(s.getUserAgentString() + " Trecker/1.8");
         web.addJavascriptInterface(new Net(), "AndroidNet");
         web.setWebViewClient(new WebViewClient() {
             @Override
@@ -152,8 +152,9 @@ public class MainActivity extends Activity {
         super.onDestroy();
     }
 
-    private void deliver(String id, int status, String text) {
-        final String js = "__httpDone(" + JSONObject.quote(id) + "," + status + "," + JSONObject.quote(text) + ")";
+    private void deliver(String id, int status, String text, String retryAfter) {
+        final String js = "__httpDone(" + JSONObject.quote(id) + "," + status + "," + JSONObject.quote(text) + ","
+                + JSONObject.quote(retryAfter == null ? "" : retryAfter) + ")";
         runOnUiThread(() -> { if (web != null && !isDestroyed()) web.evaluateJavascript(js, null); });
     }
 
@@ -174,7 +175,7 @@ public class MainActivity extends Activity {
                     c.setRequestMethod(method);
                     c.setConnectTimeout(Math.min(timeoutMs, 15000));
                     c.setReadTimeout(timeoutMs);
-                    c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) Trecker/1.2");
+                    c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) Trecker/1.8");
                     c.setRequestProperty("Accept-Language", "sr,en;q=0.8");
                     JSONObject h = new JSONObject(headersJson == null || headersJson.isEmpty() ? "{}" : headersJson);
                     Iterator<String> it = h.keys();
@@ -201,9 +202,9 @@ public class MainActivity extends Activity {
                         in.close();
                         text = out.toString("UTF-8");
                     }
-                    deliver(id, code, text);
+                    deliver(id, code, text, c.getHeaderField("Retry-After"));
                 } catch (Throwable e) {
-                    deliver(id, -1, String.valueOf(e.getMessage() != null ? e.getMessage() : e));
+                    deliver(id, -1, String.valueOf(e.getMessage() != null ? e.getMessage() : e), null);
                 } finally {
                     if (c != null) c.disconnect();
                 }
