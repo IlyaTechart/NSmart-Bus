@@ -45,7 +45,12 @@
     if (screen === 'timetable') renderTimetable();
   }
   ui.show = show;
-  function setActive() { M.active = !document.hidden && (ui.screen === 'map' || ui.screen === 'lines'); }
+  function setActive() {
+    const active = !document.hidden && (ui.screen === 'map' || ui.screen === 'lines');
+    const resumed = active && !M.active;
+    M.active = active;
+    if (resumed) M.prioritizeLive();
+  }
 
   /* Android back button: close what is open, else let the app close */
   ui.back = function () {
@@ -88,7 +93,8 @@
       } catch (e) { fallback(); }
     }
     $('#mapRetry').onclick = loadBasemap;
-    loadBasemap();
+    // Dispatch the startup GPS request before WebGL/map-style initialization.
+    setTimeout(loadBasemap, 0);
     map.attributionControl.setPrefix(false);
     L.control.zoom({ position: 'bottomright', zoomInTitle: 'Приблизить', zoomOutTitle: 'Отдалить' }).addTo(map);
     canvas = L.canvas({ padding: 0.3 });
@@ -718,6 +724,14 @@
     wire();
     const cats = T.store.get('cats', null);
     if (cats) { M.cats = cats; $('#catCity').checked = cats.city; $('#catSub').checked = cats.sub; }
+    let lastRoutes = 0;
+    M.on(function (what) {
+      if (what === 'poll' && ui.screen === 'map') tick();
+      if (what === 'schedule' && ui.screen === 'lines') renderLines();
+      if (what === 'poll' && M.focus && Date.now() - lastRoutes > 30e3) { lastRoutes = Date.now(); drawRoutes(); }
+      if (what === 'stations') { drawStops(); if (ui.screen === 'lines') renderLines(); }
+    });
+    setActive();
     try { await M.init(); } catch (e) { $('#statusLine').textContent = 'Ошибка запуска: ' + (e.message || e); }
     $('#splash').classList.add('gone');
     // deep links (used for previews on the PC): #screen=lines, #screen=timetable, #drawer, #focus=14
@@ -729,12 +743,6 @@
     setActive();
     tick();
     setInterval(tick, 1000);
-    let lastRoutes = 0;
-    M.on(function (what) {
-      if (what === 'schedule' && ui.screen === 'lines') renderLines();
-      if (what === 'poll' && M.focus && Date.now() - lastRoutes > 30e3) { lastRoutes = Date.now(); drawRoutes(); }
-      if (what === 'stations') { drawStops(); if (ui.screen === 'lines') renderLines(); }
-    });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();

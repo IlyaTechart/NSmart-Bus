@@ -25,6 +25,7 @@
   const ROUTE_TTL = 90 * 86400e3; // forget learned routes not seen for 90 days
   const STATIONS_MAX_AGE = 14 * 86400e3;
   const DEFAULT_SPEED = 7;        // m/s, only when nsmart gives no per-stop seconds
+  let startupRemaining = 4, stationRefreshPending = false;
 
   const M = T.model = {
     stations: {}, stationsAt: 0,
@@ -571,6 +572,33 @@
     M.queue = M.plan(); M.qi = 0; M.cycleStart = Date.now();
   };
 
+  // Arrival responses include GPS for several lines at once. At launch, prefer
+  // nearby interchange stops covering different lines, not distant terminals.
+  function startupStops() {
+    const area = M.viewport;
+    const center = area ? [(area.south + area.north) / 2, (area.west + area.east) / 2] : [45.2517, 19.8533];
+    const now = Date.now(), covered = new Set(), picked = [];
+    let candidates = Object.keys(M.stations).map(function (uid) {
+      const s = M.stations[uid];
+      if (s.la == null || s.lo == null || (M.polledAt[uid] && now - M.polledAt[uid] < N.policy.cacheMs)) return null;
+      const lines = Array.from(new Set((s.l || []).map(G.base))).filter(function (b) {
+        return M.focus ? b === M.focus : M.isCity(b) ? M.cats.city : M.cats.sub;
+      });
+      if (!lines.length) return null;
+      const local = !area || (s.la >= area.south && s.la <= area.north && s.lo >= area.west && s.lo <= area.east);
+      return { uid: uid, lines: lines, local: local, distance: dist(center[0], center[1], s.la, s.lo) };
+    }).filter(Boolean);
+    if (candidates.some(function (s) { return s.local; })) candidates = candidates.filter(function (s) { return s.local; });
+    while (picked.length < startupRemaining && candidates.length) {
+      candidates.sort(function (a, b) {
+        const score = function (s) { return (s.lines.filter(function (l) { return !covered.has(l); }).length * 4 + s.lines.length) / (1 + s.distance / 1500); };
+        return score(b) - score(a) || a.distance - b.distance || a.uid.localeCompare(b.uid);
+      });
+      const s = candidates.shift(); picked.push(s.uid); s.lines.forEach(function (l) { covered.add(l); });
+    }
+    return picked;
+  }
+
   M.plan = function () {
     const chosen = new Set(), order = [];
     const pick = function (u) { if (u && !chosen.has(u)) { chosen.add(u); order.push(u); } };
@@ -587,7 +615,15 @@
     Object.keys(M.lines).forEach(function (b) {
       if (want(b) && Object.keys(dirs[b] || {}).length < 2) bootstrap(b, BOOT_STOPS).forEach(pick);
     });
-    return M.prioritize(order);
+    const priority = startupRemaining > 0 ? startupStops() : [];
+    const initial = new Set(priority);
+    return priority.concat(M.prioritize(order).filter(function (u) { return !initial.has(u); })).slice(0, 32);
+  };
+
+  M.prioritizeLive = function () {
+    if (M.lastOkAt && Date.now() - M.lastOkAt < N.policy.cacheMs) return;
+    startupRemaining = 4;
+    M.queue = M.plan(); M.qi = 0; M.cycleStart = Date.now();
   };
 
   M.setFocus = function (base) {
@@ -613,7 +649,10 @@
         if (M.cycleStart && M.queue.length) M.lastCycleS = Math.round((Date.now() - M.cycleStart) / 1000);
         M.queue = M.plan(); M.qi = 0; M.cycleStart = Date.now();
         saveRoutes();
-        if (!M.queue.length) { await T.sleep(3000); continue; }
+        if (!M.queue.length) {
+          if (stationRefreshPending) { stationRefreshPending = false; await refreshStations(); }
+          await T.sleep(3000); continue;
+        }
       }
       const uid = M.queue[M.qi++];
       M.polledAt[uid] = Date.now();
@@ -628,6 +667,11 @@
         M.observe(r.buses, receivedAt);
       }
       emit('poll');
+      if (startupRemaining > 0 && r.fromNetwork) startupRemaining--;
+      if (!startupRemaining && stationRefreshPending && M.active && !N.gate.backoffMs()) {
+        stationRefreshPending = false;
+        refreshStations();
+      }
       if (!r.fromNetwork) await T.sleep(250);
     }
   }
@@ -649,11 +693,14 @@
       r.base = G.base(r.line);
       M.routes[k] = r;
     });
+    // With the bundled/cached catalogue, send the first GPS query immediately.
+    // Updating the full catalogue must not occupy the first startup API slots.
     if (!Object.keys(M.stations).length) await refreshStations();
-    else if (now - M.stationsAt > STATIONS_MAX_AGE) refreshStations();
+    else stationRefreshPending = now - M.stationsAt > STATIONS_MAX_AGE;
+    startupRemaining = 4;
     M.queue = M.plan(); M.cycleStart = Date.now();
     pollLoop();
-    loadSchedule();
+    Promise.resolve().then(loadSchedule); // Let the queued GPS dispatch run first.
     setInterval(function () { saveRoutes(); }, 30e3);
     setInterval(function () { loadSchedule(); }, 30 * 60e3);
     emit('ready');
