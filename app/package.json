@@ -6,7 +6,7 @@
   "scripts": {
     "test": "node tools/test_core.js && node tools/test-roads.cjs && node tools/test-request-policy.cjs && node tools/test-startup.cjs",
     "start": "node tools/devserver.js",
-    "test:ui": "node tools/test-map-interactions.cjs && node tools/test-stop-sheet.cjs && node tools/test-request-policy-ui.cjs && node tools/test-vehicle-route.cjs && node tools/test-startup-ui.cjs",
+    "test:ui": "node tools/test-map-interactions.cjs && node tools/test-stop-sheet.cjs && node tools/test-request-policy-ui.cjs && node tools/test-vehicle-route.cjs && node tools/test-language.cjs && node tools/test-startup-ui.cjs",
     "preview": "node tools/preview-design.cjs"
   },
   "devDependencies": {

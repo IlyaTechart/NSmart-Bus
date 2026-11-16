@@ -93,7 +93,10 @@
       T.store.set('stations_v1', { at: M.stationsAt, st: st });
       buildLines();
       emit('stations');
-    } catch (e) { M.lastError = 'список остановок: ' + (e && e.message || e); }
+    } catch (e) {
+      const message = e && e.message || e;
+      M.lastError = T.i18n ? T.i18n.t('error.stopList', { error: message }) : 'список остановок: ' + message;
+    }
   }
 
   // ---------------- routes (learned from nsmart all_stations) ----------------
@@ -287,7 +290,7 @@
   /* timetables of every line for one (rv, day type): 2 gspns requests, cached for a week */
   async function ensureTables(rv, dan, force) {
     const idx = await ensureIndex();
-    if (!idx) throw new Error(M.sched.error || 'нет связи с gspns.rs');
+    if (!idx) throw new Error(M.sched.error || (T.i18n ? T.i18n.t('error.noGspns') : 'нет связи с gspns.rs'));
     const vaziod = vaziodFor(T.isoDay(T.bg(Date.now())));
     const key = 'tt2|' + vaziod + '|' + rv + '|' + dan;
     let obj = M.sched.tables[rv + '|' + dan];
@@ -327,7 +330,8 @@
       M.tripsAt = 0;
       emit('schedule');
     } catch (e) {
-      M.sched.error = 'расписание: ' + (e && e.message || e);
+      const message = e && e.message || e;
+      M.sched.error = T.i18n ? T.i18n.t('error.timetable', { error: message }) : 'расписание: ' + message;
     } finally { M.sched.loading = false; }
   }
   M.loadSchedule = loadSchedule;

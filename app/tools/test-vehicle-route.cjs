@@ -38,6 +38,11 @@ const fs=require('fs'),path=require('path'),assert=require('assert');
       },key),'Displayed geometry matches this exact vehicle route');
     }
     await tapBus('bus-a');await assertRoute('a');
+    assert(await page.evaluate(()=>{
+      const layers=testRoutes.getLayers();
+      return layers[0].options.className==='selected-route-halo'&&layers[0].options.color==='#7ee2a8'&&layers[0].options.weight===16&&
+        layers[1].options.className==='selected-route-line'&&layers[1].options.color==='#087f5b'&&layers[1].options.weight===6;
+    }),'The exact vehicle route has a visible highlight halo');
     assert((await page.locator('#focusLabel').innerText()).includes('1015'));assert((await page.locator('#focusName').innerText()).includes('VETERNIK'));
     assert.equal(await page.locator('.vehicle.selected').count(),1);
     await page.waitForTimeout(1200);await assertRoute('a');

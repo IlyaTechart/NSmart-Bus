@@ -185,6 +185,10 @@ main { bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px)); }
 .nav-item.on { background: #edf3e5; }
 .drawer-label { font-size: 10px; color: #95a08b; }
 .switch-row { font-size: 13px; }
+.language-switch { display: flex; gap: 4px; margin: 8px 20px; padding: 4px; border-radius: 12px; background: #e9eee2; }
+.language-switch button { flex: 1; min-height: 36px; border-radius: 9px; color: #728379; font-size: 12px; font-weight: 600; }
+.language-switch button[aria-pressed="true"] { color: #fff; background: var(--primary); box-shadow: 0 2px 7px #174e3624; }
+.bottom-item small { font: inherit; }
 .legend-row { font-size: 11px; padding: 10px 20px; }
 .legend-row .bus { flex: none; }
 .scrim { background: #173d344a; backdrop-filter: blur(3px); }

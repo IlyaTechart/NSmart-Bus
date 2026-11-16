@@ -23,7 +23,7 @@
         const watchdog = setTimeout(function () {
           if (!pending[id]) return;
           delete pending[id];
-          reject(new Error('Истекло время ожидания сети'));
+          reject(new Error(T.i18n ? T.i18n.t('error.networkTimeout') : 'Истекло время ожидания сети'));
         }, timeoutMs + 2000);
         pending[id] = function (status, text, retryAfter) {
           clearTimeout(watchdog);

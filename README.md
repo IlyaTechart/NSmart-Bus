@@ -1,122 +1,123 @@
-﻿# NSmart Bus · Trecker NS
+# NSmart Bus · Trecker NS
 
-**Автобусы Нови-Сада на карте: GPS-позиции, прибытия на остановки и расписание в одном Android-приложении.**
+**Novi Sad buses on a map: GPS positions, stop arrivals, and timetables in one Android app.**
 
-Этот репозиторий — форк проекта Павла [katurov/NSBusTablica](https://github.com/katurov/NSBusTablica), дополненный Android-приложением Trecker NS. История, сервер и прошивки исходного проекта сохранены. Его оригинальная документация находится в [UPSTREAM.md](UPSTREAM.md); приложение — в папке [`app/`](app/).
+This repository is a fork of Paul’s [katurov/NSBusTablica](https://github.com/katurov/NSBusTablica), extended with the Trecker NS Android app. The original project’s history, server, and firmware are preserved. Its original documentation is available in [UPSTREAM.md](UPSTREAM.md); the app is located in [`app/`](app/).
 
-Trecker NS помогает посмотреть, где едет автобус, выбрать маршрут и узнать, когда транспорт прибудет на нужную остановку. Приложение использует данные NSmart и официальное расписание GSP Novi Sad. Интерфейс — на русском, названия маршрутов и остановок сохраняются из источников.
+Trecker NS helps you see where a bus is, choose a route, and find out when transport will arrive at your stop. The app uses NSmart data and the official GSP Novi Sad timetable. The interface is available in Russian and English, while route and stop names are preserved from their sources.
 
-[**Скачать APK 1.9**](https://github.com/IlyaTechart/NSmart-Bus/releases/download/v1.9/Trecker.apk) · [Все релизы](https://github.com/IlyaTechart/NSmart-Bus/releases)
+[**Download APK 1.9**](https://github.com/IlyaTechart/NSmart-Bus/releases/download/v1.9/Trecker.apk) · [All releases](https://github.com/IlyaTechart/NSmart-Bus/releases)
 
 <p>
-  <img src="docs/images/map.png" width="260" alt="Карта автобусов Нови-Сада">
-  <img src="docs/images/map-collapsed.png" width="260" alt="Карта со свёрнутой панелью">
-  <img src="docs/images/route.png" width="260" alt="Выбранный маршрут">
+  <img src="docs/images/map.png" width="260" alt="Novi Sad bus map">
+  <img src="docs/images/map-collapsed.png" width="260" alt="Map with the panel collapsed">
+  <img src="docs/images/route.png" width="260" alt="Selected route">
 </p>
 
-## Возможности
+## Features
 
-- Векторная карта с собственным светлым стилем: голубой Дунай, зелёные парки и спокойные цвета улиц.
-- Городские и пригородные маршруты, поиск по номеру или названию района.
-- Три типа позиций: свежий GPS, расчёт по последнему GPS и прогноз по расписанию.
-- Движение расчётных меток по дорожной сети между остановками с сохранением ETA. Геометрия включена в APK и не требует отдельного сервера маршрутизации.
-- Фильтр «Только GPS» и переход к собственному местоположению.
-- Группировка близких автобусов с количеством и номерами маршрутов. Нажатие приближает группу, а на крупном масштабе раскрывает совпадающие метки веером.
-- Сворачиваемая карточка «На карте сейчас»: потяните вниз за верхнюю часть или нажмите стрелку. Свайп вверх раскрывает её обратно.
-- Прибытия на остановку по нажатию на её кружок и расписание отправлений с конечных.
-- Панель остановки закрывается крупным крестиком или свайпом вниз за верхнюю часть. Можно потянуть вниз и сам список, когда он прокручен к началу.
-- Кэширование каталога остановок, изученных маршрутов и расписаний.
+- A vector map with a custom light style: a blue Danube, green parks, and subdued street colors.
+- Urban and suburban routes, with search by number or neighborhood name.
+- Russian and English interface languages, switched instantly from the side menu and saved across restarts.
+- Three position types: fresh GPS, an estimate based on the last GPS fix, and a timetable-based prediction.
+- Estimated markers move along the road network between stops while preserving their ETA. Road geometry is bundled into the APK and does not require a separate routing server.
+- A “GPS only” filter and a button to go to your own location.
+- Clustering of nearby buses with their count and route numbers. Tapping a cluster zooms in; at high zoom levels, overlapping markers spread out.
+- A collapsible “On the map now” card: drag its top edge down or tap the arrow. Swipe up to expand it again.
+- Stop arrivals when you tap a stop circle, plus departure timetables from terminals.
+- The stop panel closes with a large close button or a downward swipe from its top edge. You can also drag the list itself down when it is scrolled to the top.
+- Caching of the stop catalog, discovered routes, and timetables.
 
-## Установка
+## Installation
 
-1. Скачайте [Trecker.apk из релиза](https://github.com/IlyaTechart/NSmart-Bus/releases/latest).
-2. Откройте APK на Android и, если потребуется, разрешите установку из выбранного браузера или файлового менеджера.
-3. Запустите приложение с подключением к интернету. Разрешение на геолокацию нужно только для кнопки «Где я».
+1. Download [Trecker.apk from a release](https://github.com/IlyaTechart/NSmart-Bus/releases/latest).
+2. Open the APK on Android and, if prompted, allow installation from the browser or file manager you used.
+3. Launch the app with an internet connection. Location permission is needed only for the “Where am I” button.
 
-Требуется **Android 7.0 или новее**. Карта и актуальные прибытия загружаются из сети; это не приложение для полноценной работы офлайн. Для векторной карты нужен WebView с поддержкой WebGL; при его отсутствии включается резервная растровая карта.
+**Android 7.0 or newer is required.** The map and current arrivals are downloaded from the network; this is not a fully offline app. The vector map requires a WebView with WebGL support; without it, a raster map is used as a fallback.
 
-## Что означают цвета
+## What the colors mean
 
-| Метка | Источник | Как понимать |
+| Marker | Source | Interpretation |
 | --- | --- | --- |
-| Зелёная · GPS | Свежие координаты из NSmart | Последняя известная GPS-позиция. Она тоже может приходить с задержкой. |
-| Золотистая · Расчёт | Ранее полученный GPS и времена до остановок | Приблизительная позиция после последнего свежего GPS. |
-| Светлая · Расписание | Расписание GSP и известное время движения | Прогноз без реального GPS. Он не подтверждает, что автобус действительно вышел на рейс. |
+| Green · GPS | Fresh coordinates from NSmart | The latest known GPS position. It may also arrive with a delay. |
+| Gold · Estimated | A previously received GPS fix and times to stops | An approximate position after the last fresh GPS fix. |
+| Light · Timetable | The GSP timetable and known travel time | A prediction without real GPS. It does not confirm that the bus actually started its trip. |
 
-NSmart предоставляет данные о прибытиях к отдельным остановкам, поэтому приложение опрашивает набор остановок и постепенно собирает картину движения. Автобусы появляются по мере получения ответов; карта не гарантирует полный охват транспорта. Повторный ответ с теми же координатами не считается новым GPS-замером.
+NSmart provides arrival data for individual stops, so the app polls a set of stops and gradually builds a picture of traffic. Buses appear as responses arrive; the map does not guarantee complete transport coverage. A repeated response with the same coordinates is not treated as a new GPS fix.
 
-В расписании показано **отправление с конечной**, а не обещанное время прибытия на любую остановку. Время рассчитывается для часового пояса `Europe/Belgrade`.
+The timetable shows **departure from the terminal**, not a promised arrival time at any stop. Times are calculated for the `Europe/Belgrade` time zone.
 
-### Бережный опрос NSmart
+### Conservative NSmart polling
 
-Начиная с версии 1.9 ускорен запуск: первый GPS-запрос к крупной остановке в видимой области отправляется до инициализации подложки, а данные показываются сразу после ответа. Обновление встроенного/сохранённого каталога ждёт первых четырёх GPS-запросов. Начальные остановки выбираются для охвата разных местных линий. Сохранённые ограничения частоты и паузы после ошибок соблюдаются и при запуске.
+Since version 1.9, startup is faster: the first GPS request to a major stop in the visible area is sent before the basemap is initialized, and data is displayed as soon as the response arrives. Updating the bundled/saved catalog waits for the first four GPS requests. Initial stops are selected to cover different local lines. Saved rate limits and error backoff periods are also respected during startup.
 
-Начиная с версии 1.8 действует общий лимит **20 сетевых запросов за любые 60 секунд**, с интервалом минимум **3 секунды** и одним запросом в работе. Он общий для карты, ручного обновления, панели остановки и загрузки каталога; движение карты его не сбрасывает. История бюджета и пауза сохраняются локально при перезапуске приложения.
+Since version 1.8, a shared limit of **20 network requests in any 60 seconds** applies, with at least **3 seconds** between requests and only one request in flight. It is shared by the map, manual refresh, the stop panel, and catalog downloads; moving the map does not reset it. Budget history and backoff periods are saved locally across app restarts.
 
-Ответ одной остановки используется **30 секунд**. Одновременные обращения к ней объединяются, а ETA пересчитывается от времени получения исходного ответа. Кэш не делает GPS свежее. В широком обзоре обход всех остановок может занимать больше минуты; между ответами позиции рассчитываются локально.
+A response for a stop is reused for **30 seconds**. Concurrent requests for it are coalesced, and ETAs are recalculated from the original response’s receipt time. The cache does not make GPS data fresher. In a wide view, polling every stop can take more than a minute; positions are estimated locally between responses.
 
-При HTTP 403/429 приложение делает паузу минимум **5 минут**, увеличивая её при повторениях до **30 минут**; более длинный `Retry-After` сервера также соблюдается. Другие ошибки вызывают растущую паузу от 15 секунд до 5 минут. Новые запросы не отправляются в фоне, включая ожидавшие своей очереди.
+After HTTP 403/429, the app pauses for at least **5 minutes**, increasing the pause on repeated errors up to **30 minutes**; a longer server-provided `Retry-After` is also respected. Other errors cause a growing pause from 15 seconds to 5 minutes. No new requests are sent in the background, including requests already waiting in the queue.
 
-Это наша политика снижения нагрузки, а не опубликованная квота NSmart. Бюджет действует на экземпляр приложения, не на весь внешний IP: пользователи одной Wi-Fi/мобильной сети могут иметь общий адрес. В APK запросы выполняются с устройства клиента. Браузерный `devserver` — локальный инструмент разработки: его прокси отправляет запросы с компьютера, на котором запущен.
+This is our load-reduction policy, not a published NSmart quota. The budget applies per app instance, not per external IP address: users on the same Wi-Fi/mobile network may share an address. In the APK, requests are sent from the client device. The browser `devserver` is a local development tool: its proxy sends requests from the computer running it.
 
-Нажатие на автобус выделяет маршрут и остановки именно его направления и варианта линии. В карточке можно нажать «Показать маршрут целиком». Крестик над картой снимает выделение; если до этого была выбрана линия, возвращаются её маршруты. Дополнительные запросы к NSmart при выборе автобуса не отправляются. Неполученный маршрут не подменяется другой линией, а участки без дорожной геометрии обозначаются приблизительным пунктиром.
+Tapping a bus highlights the route and stops for its exact direction and line variant with a bright green line and a soft halo. In its card, tap “Show full route.” The close button above the map clears the selection; if a line was selected beforehand, its routes are restored. Selecting a bus does not send additional NSmart requests. An unavailable route is never replaced with another line, and sections without road geometry are shown as approximate dashed segments.
 
-Дорожная привязка покрывает Нови-Сад и ближайшие окрестности. Она использует последовательность остановок и дорожную сеть OpenStreetMap, а не официальную геометрию автобусного маршрута. Вне покрытия или при отсутствии подходящего пути остаётся приблизительная интерполяция; это указано в окне автобуса. Специальные автобусные исключения и все ограничения поворотов в используемых векторных данных отсутствуют. Подробнее о данных и их обновлении — в [`app/www/data/ROADS.md`](app/www/data/ROADS.md).
+Road snapping covers Novi Sad and nearby areas. It uses the stop sequence and the OpenStreetMap road network rather than official bus route geometry. Outside the coverage area, or when no suitable path is available, approximate interpolation remains; this is noted in the bus popup. Special bus exceptions and all turn restrictions are absent from the vector data used. For details about the data and how to update it, see [`app/www/data/ROADS.md`](app/www/data/ROADS.md).
 
-## Разработка
+## Development
 
-Приложение состоит из HTML/CSS/JavaScript в Android WebView и небольшой Java-оболочки. Оболочка выполняет сетевые запросы к NSmart/GSP, обрабатывает разрешение геолокации и системную кнопку «Назад». Сервер для работы APK не требуется.
+The app consists of HTML/CSS/JavaScript running in an Android WebView and a small Java wrapper. The wrapper performs network requests to NSmart/GSP, handles location permission, and supports the system Back button. No server is required for the APK to work.
 
 ```text
 app/
-  www/                  интерфейс, карта, модель движения и встроенные библиотеки
-  android/              Java-оболочка, AndroidManifest и ресурсы
-  tools/                локальный сервер, тесты и тестовые данные
-  build.ps1             сборка и подпись APK
-docs/images/            скриншоты интерфейса
+  www/                  interface, map, movement model, and bundled libraries
+  android/              Java wrapper, AndroidManifest, and resources
+  tools/                local server, tests, and test data
+  build.ps1             APK build and signing
+docs/images/            interface screenshots
 ```
 
-### Запуск в браузере
+### Running in a browser
 
-Понадобится Node.js 18 или новее:
+Node.js 18 or newer is required:
 
 ```sh
 cd app
 npm start
 ```
 
-Откройте `http://localhost:8787`. Локальный сервер проксирует запросы к источникам данных, заменяя Android-мост. Запускайте его только в доверенной локальной среде. Для просмотра отдельного маршрута можно использовать `http://localhost:8787/#focus=9`.
+Open `http://localhost:8787`. The local server proxies requests to the data sources, replacing the Android bridge. Run it only in a trusted local environment. To view an individual route, use `http://localhost:8787/#focus=9`.
 
-### Проверки
+### Checks
 
-Основные тесты не требуют установки npm-пакетов или доступа к сети:
+The core tests require neither npm packages nor network access:
 
 ```sh
 cd app
 npm test
 ```
 
-Для проверок интерфейса установите зависимости и Chrome, затем запустите локальный сервер в отдельном терминале:
+For UI checks, install the dependencies and Chrome, then start the local server in a separate terminal:
 
 ```sh
 npm ci
 npm start
 ```
 
-В другом терминале, в папке `app`:
+In another terminal, from the `app` directory:
 
 ```sh
 npm run test:ui
 npm run preview
 ```
 
-При нестандартном расположении Chrome задайте переменную окружения `CHROME_PATH` с путём к исполняемому файлу. Тесты интерфейса проверяют touch-жесты, панели, сохранность автобусов при масштабировании, раскрытие групп, GPS-фильтр и повторное обновление остановки. Автотесты не опрашивают NSmart/GSP: используются подставные ответы, а для проверки частоты — виртуальные часы. Эти данные не попадают в приложение. Отдельная команда `preview` работает с сетевыми источниками и сохраняет скриншоты.
+If Chrome is installed in a nonstandard location, set the `CHROME_PATH` environment variable to its executable. The UI tests cover touch gestures, panels, bus retention while zooming, cluster expansion, the GPS filter, repeated stop refreshes, and Russian/English switching with persistence. Automated tests do not poll NSmart/GSP: they use mock responses and, for rate checks, a virtual clock. These data are not included in the app. The separate `preview` command uses network sources and saves screenshots.
 
-### Сборка APK на Windows
+### Building the APK on Windows
 
-Нужны JDK 17 и Android SDK с `platforms;android-34` и `build-tools;34.0.0`. Android Studio и Gradle не обязательны.
+JDK 17 and an Android SDK with `platforms;android-34` and `build-tools;34.0.0` are required. Android Studio and Gradle are not necessary.
 
-Ожидаемая структура каталога инструментов:
+Expected tool directory structure:
 
 ```text
 trecker-tools/
@@ -130,16 +131,16 @@ $env:TRECKER_TOOLS = 'C:\path\to\trecker-tools'
 powershell -ExecutionPolicy Bypass -File app/build.ps1
 ```
 
-Результат — `Trecker.apk` в корне проекта. Без `TRECKER_TOOLS` используется папка `trecker-tools` в профиле текущего пользователя.
+The result is `Trecker.apk` in the project root. Without `TRECKER_TOOLS`, the script uses the `trecker-tools` folder in the current user’s profile.
 
-Ключ подписи `app/android/trecker.keystore` не хранится в репозитории. Если его нет, скрипт создаёт локальный ключ для разработки. APK, подписанный другим ключом, не установится поверх релизного как обновление. Сохраняйте свой ключ для последующих собственных сборок.
+The `app/android/trecker.keystore` signing key is not stored in the repository. If it is absent, the script creates a local development key. An APK signed with a different key cannot be installed over the release version as an update. Keep your key for subsequent builds of your own.
 
-## Источники и благодарности
+## Sources and acknowledgments
 
-- [NSmart](https://online.nsmart.rs/) — сведения о прибытиях и движении транспорта.
-- [GSP Novi Sad](https://www.gspns.rs/) — официальное расписание.
-- [OpenFreeMap](https://openfreemap.org/), [OpenMapTiles](https://openmaptiles.org/), [OpenStreetMap](https://www.openstreetmap.org/copyright) — картографические данные и векторная подложка.
-- [Leaflet](https://leafletjs.com/), [MapLibre GL JS](https://maplibre.org/), Leaflet.markercluster и Manrope — библиотеки и шрифт. Лицензии встроенных компонентов находятся в `app/www/lib/`.
-- [katurov/NSBusTablica](https://github.com/katurov/NSBusTablica) — идеи работы с NSmart, обработки устаревших координат и прогнозов; происхождение тестовых данных описано в `app/tools/fixtures/README.md`.
+- [NSmart](https://online.nsmart.rs/) — transport arrival and movement data.
+- [GSP Novi Sad](https://www.gspns.rs/) — the official timetable.
+- [OpenFreeMap](https://openfreemap.org/), [OpenMapTiles](https://openmaptiles.org/), [OpenStreetMap](https://www.openstreetmap.org/copyright) — map data and the vector basemap.
+- [Leaflet](https://leafletjs.com/), [MapLibre GL JS](https://maplibre.org/), Leaflet.markercluster, and Manrope — libraries and the font. Licenses for bundled components are in `app/www/lib/`.
+- [katurov/NSBusTablica](https://github.com/katurov/NSBusTablica) — approaches to working with NSmart, handling stale coordinates, and making predictions; the provenance of the test data is described in `app/tools/fixtures/README.md`.
 
-Это независимый проект, не официальное приложение NSmart или GSP Novi Sad. Доступность данных и точность прогнозов зависят от внешних сервисов. /Android
+This is an independent project, not an official NSmart or GSP Novi Sad app. Data availability and prediction accuracy depend on external services. /Android
