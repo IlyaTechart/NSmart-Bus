@@ -6,7 +6,7 @@ This repository is a fork of Paul’s [katurov/NSBusTablica](https://github.com/
 
 Trecker NS helps you see where a bus is, choose a route, and find out when transport will arrive at your stop. The app uses NSmart data and the official GSP Novi Sad timetable. The interface is available in Russian and English, while route and stop names are preserved from their sources.
 
-[**Download APK 1.10**](https://github.com/IlyaTechart/NSmart-Bus/releases/download/v1.10/Trecker.apk) · [All releases](https://github.com/IlyaTechart/NSmart-Bus/releases)
+[**Download APK 1.11**](https://github.com/IlyaTechart/NSmart-Bus/releases/download/v1.11/Trecker.apk) · [All releases](https://github.com/IlyaTechart/NSmart-Bus/releases)
 
 <p>
   <img src="docs/images/map.png" width="260" alt="Novi Sad bus map">
@@ -133,7 +133,7 @@ powershell -ExecutionPolicy Bypass -File app/build.ps1
 
 The result is `Trecker.apk` in the project root. Without `TRECKER_TOOLS`, the script uses the `trecker-tools` folder in the current user’s profile.
 
-The `app/android/trecker.keystore` signing key is not stored in the repository. If it is absent, the script creates a local development key. An APK signed with a different key cannot be installed over the release version as an update. Keep your key for subsequent builds of your own.
+The `app/android/trecker.keystore` signing key is not stored in the repository. If it is absent, the script creates a local development key. To use a key stored elsewhere, set `TRECKER_KEYSTORE` to its path before running the script. An APK signed with a different key cannot be installed over the release version as an update. Keep your key for subsequent builds of your own.
 
 ## Sources and acknowledgments
 

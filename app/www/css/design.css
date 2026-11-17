@@ -58,8 +58,7 @@ main { bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px)); }
 #focusName { display: block; font-size: 11px; font-weight: 650; }
 .chip-x { background: #f2f5ee; color: #7d9080; width: 30px; height: 30px; font-size: 13px; }
 .status { left: 14px; right: 14px; bottom: 12px; padding: 18px 18px 13px; border: 1px solid #e6ece1;
-  border-radius: 26px; background: #fffffff7; box-shadow: 0 8px 32px #29493617, 0 1px 3px #29493608; }
-@supports (backdrop-filter: blur(10px)) { .status { backdrop-filter: blur(16px); } }
+  border-radius: 26px; background: #fff; box-shadow: 0 8px 32px #29493617, 0 1px 3px #29493608; }
 .status-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 14px; }
 .section-eyebrow { display: block; color: #90a080; font-size: 8px; letter-spacing: 1.6px; font-weight: 700; }
 .status h1 { margin: 4px 0 0; font-size: 21px; font-weight: 700; letter-spacing: -.7px; line-height: 1.2; }

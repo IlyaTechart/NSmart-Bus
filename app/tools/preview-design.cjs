@@ -10,7 +10,7 @@ const path = require('path');
     page.on('pageerror', e => errors.push(e.message));
     page.on('console', m => { if (m.type() === 'error') console.log('console:', m.text().slice(0, 300)); });
     await page.goto('http://localhost:8787/', { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('.splash.gone', { timeout: 45000 });
+    await page.waitForSelector('.splash.gone', { state: 'attached', timeout: 45000 });
     await page.waitForTimeout(14000);
     await page.screenshot({ path: path.resolve(__dirname, '../../map-preview.png') });
     console.log('map:', await page.evaluate(() => ({ canvas: !!document.querySelector('.maplibregl-canvas'), overflow: document.documentElement.scrollWidth > innerWidth,

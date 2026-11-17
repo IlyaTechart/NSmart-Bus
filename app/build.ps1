@@ -48,7 +48,7 @@ try { Run "$BT\aapt.exe" @("add", "$Out\unsigned.apk", "classes.dex") | Out-Null
 
 Write-Host "6/6 align + sign"
 Run "$BT\zipalign.exe" @("-f", "-p", "4", "$Out\unsigned.apk", "$Out\aligned.apk")
-$Ks = "$App\android\trecker.keystore"
+$Ks = if ($env:TRECKER_KEYSTORE) { $env:TRECKER_KEYSTORE } else { "$App\android\trecker.keystore" }
 if (-not (Test-Path $Ks)) {
     Run "keytool" @("-genkeypair", "-keystore", $Ks, "-alias", "trecker", "-keyalg", "RSA", "-keysize", "2048",
                     "-validity", "10000", "-storepass", "trecker", "-keypass", "trecker", "-dname", "CN=Trecker NS")

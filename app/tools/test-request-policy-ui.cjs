@@ -8,7 +8,7 @@ const fs=require('fs'),path=require('path'),assert=require('assert');
     await require('./offline-ui.cjs')(page);
     await page.route('**/js/ui.js',route=>route.fulfill({contentType:'application/javascript',body:
       fs.readFileSync(path.join(__dirname,'../www/js/ui.js'),'utf8').replace('function openStop(uid) {','ui.testOpenStop=openStop; function openStop(uid) {')}));
-    await page.goto('http://localhost:8787/');await page.waitForSelector('.splash.gone');
+    await page.goto('http://localhost:8787/');await page.waitForSelector('.splash.gone',{state:'attached'});
     const fixture=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/raw_6712_live_far.json'),'utf8'));
     await page.evaluate(raw=>{
       window.mockCalls=0;

@@ -10,7 +10,7 @@ const fs=require('fs'),path=require('path'),assert=require('assert');
         .replace('busLayer = L.markerClusterGroup(','busLayer = window.testBuses = L.markerClusterGroup(')
         .replace('routeLayer = L.layerGroup(','routeLayer = window.testRoutes = L.layerGroup(')
         .replace('stopLayer = L.layerGroup(','stopLayer = window.testStops = L.layerGroup(')}));
-    await page.goto('http://localhost:8787/');await page.waitForSelector('.splash.gone');
+    await page.goto('http://localhost:8787/');await page.waitForSelector('.splash.gone',{state:'attached'});
     const raw=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/raw_6712_live_far.json'),'utf8'));
     await page.evaluate(raw=>{
       window.apiCalls=0;T.http=async()=>{apiCalls++;throw Error('Unexpected API request');};
@@ -45,7 +45,12 @@ const fs=require('fs'),path=require('path'),assert=require('assert');
     }),'The exact vehicle route has a visible highlight halo');
     assert((await page.locator('#focusLabel').innerText()).includes('1015'));assert((await page.locator('#focusName').innerText()).includes('VETERNIK'));
     assert.equal(await page.locator('.vehicle.selected').count(),1);
+    await page.evaluate(()=>{window.stablePopupTitle=document.querySelector('.pop-title');window.stableRouteButton=document.querySelector('.route-overview');busItems[0].age=2;});
     await page.waitForTimeout(1200);await assertRoute('a');
+    assert((await page.locator('[data-popup-age]').innerText()).includes('2'),'GPS age is filled immediately');
+    await page.evaluate(()=>{busItems[0].age=3;});await page.waitForTimeout(1200);
+    assert((await page.locator('[data-popup-age]').innerText()).includes('3'),'GPS age keeps updating');
+    assert(await page.evaluate(()=>stablePopupTitle===document.querySelector('.pop-title')&&stableRouteButton===document.querySelector('.route-overview')),'Tick updates only the GPS age, not the whole popup DOM');
     await page.locator('[data-route-overview]').click();await page.waitForTimeout(700);await assertRoute('a');
     await page.locator('#focusClear').click();assert.equal(await page.evaluate(()=>testRoutes.getLayers().length),0);
     await page.evaluate(()=>{testMap.setView([busItems[1].la,busItems[1].lo],17);});await page.waitForTimeout(700);

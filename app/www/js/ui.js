@@ -148,7 +148,7 @@
     rows += '<div class="pop-row">' + tr('popup.status') + ' <b>' + tr('kind.' + it.kind) + '</b></div>';
     if (it.kind !== 'sched') {
       rows += '<div class="pop-row">' + tr('popup.fleet') + ' <b>' + esc(it.garage) + '</b></div>';
-      rows += '<div class="pop-row">' + tr('popup.gpsReceived') + ' <b>' + ago(it.age) + '</b></div>';
+      rows += '<div class="pop-row">' + tr('popup.gpsReceived') + ' <b data-popup-age></b></div>';
     }
     if (it.next) rows += '<div class="pop-row">' + tr('popup.nextStop') + ' <b>' + esc(it.next) + '</b></div>';
     if (it.kind !== 'gps') rows += '<div class="pop-row">' + tr('popup.trajectory') + ' <b>' + tr(it.roadAligned ? 'popup.trajectoryRoad' : 'popup.trajectoryApprox') + '</b></div>';
@@ -160,6 +160,17 @@
       if (selectedRouteApproximate) rows += '<div class="pop-row">' + tr('popup.approxNote') + '</div>';
     }
     return rows;
+  }
+  function updatePopup(m, it) {
+    const popup = m.getPopup();
+    if (!popup) return;
+    const content = popupContent(it);
+    if (m._popupContent !== content) { popup.setContent(content); m._popupContent = content; }
+    const element = popup.getElement(), age = element && element.querySelector('[data-popup-age]');
+    if (age) {
+      const text = ago(it.age);
+      if (age.textContent !== text) age.textContent = text;
+    }
   }
   function ago(sec) {
     if (sec == null) return '—';
@@ -195,7 +206,9 @@
         m.on('click', function () {
           selectVehicle(m._it);
           openPopupId = it.id;
-          m.bindPopup(popupContent(m._it), { autoPan: true, offset: [0, -15], maxWidth: Math.min(300, window.innerWidth - 64), autoPanPaddingTopLeft: [16, 190], autoPanPaddingBottomRight: [16, 270] }).openPopup();
+          m._popupContent = popupContent(m._it);
+          m.bindPopup(m._popupContent, { autoPan: true, offset: [0, -15], maxWidth: Math.min(300, window.innerWidth - 64), autoPanPaddingTopLeft: [16, 190], autoPanPaddingBottomRight: [16, 270] }).openPopup();
+          updatePopup(m, m._it);
         });
         m.on('popupclose', function () { if (openPopupId === it.id) openPopupId = null; });
         m.addTo(busLayer);
@@ -215,7 +228,7 @@
       m.options.title = markerTitle;
       const markerElement = m.getElement();
       if (markerElement) markerElement.title = markerTitle;
-      if (openPopupId === it.id && m.getPopup()) m.getPopup().setContent(popupContent(it));
+      if (openPopupId === it.id) updatePopup(m, it);
     });
     Object.keys(markers).forEach(function (id) {
       if (!spiderfied && !seen[id]) { busLayer.removeLayer(markers[id]); delete markers[id]; }
@@ -692,7 +705,7 @@
     });
     if (allMarkers.length) busLayer.refreshClusters(allMarkers);
     const popupMarker = openPopupId && markers[openPopupId];
-    if (popupMarker && popupMarker.getPopup()) popupMarker.getPopup().setContent(popupContent(popupMarker._it));
+    if (popupMarker) updatePopup(popupMarker, popupMarker._it);
     if (sheetStop) {
       renderStopHeading(sheetStop);
       if (sheetResult) renderArrivals(sheetResult);

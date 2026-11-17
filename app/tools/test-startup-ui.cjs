@@ -20,7 +20,7 @@ const www=path.join(__dirname,'../www');
       fs.readFileSync(path.join(www,'lib/maplibre/leaflet-maplibre-gl.js'),'utf8')+
       '\nconst createBasemap=L.maplibreGL;L.maplibreGL=function(options){bootEvents.push("basemap-init");return createBasemap(options);};'}));
     await page.goto('http://localhost:8787/');
-    await page.waitForSelector('.splash.gone');
+    await page.waitForSelector('.splash.gone',{state:'attached'});
     const events=await page.evaluate(()=>bootEvents);
     assert(events.includes('gps-request'));assert(events.indexOf('gps-request')<events.indexOf('basemap-init'),'GPS dispatch precedes WebGL initialization');
     assert(!events.includes('catalogue-request'),'A bundled catalogue does not block the initial GPS request');

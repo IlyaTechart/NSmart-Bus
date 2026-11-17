@@ -182,7 +182,7 @@ main { position: fixed; top: var(--bar-h); left: 0; right: 0; bottom: 0; }
 /* splash */
 .splash { position: fixed; inset: 0; z-index: 3000; background: var(--primary); color: #fff; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 16px; font-size: 16px; transition: opacity .3s; }
-.splash.gone { opacity: 0; pointer-events: none; }
+.splash.gone { display: none; opacity: 0; pointer-events: none; }
 .spinner { width: 42px; height: 42px; border-radius: 50%; border: 4px solid rgba(255,255,255,.3); border-top-color: #fff; animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .stop-pin { width: 12px; height: 12px; }

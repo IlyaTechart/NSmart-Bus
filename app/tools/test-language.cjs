@@ -11,7 +11,7 @@ const fs=require('fs'),path=require('path'),assert=require('assert');
       fs.readFileSync(path.join(__dirname,'../www/js/ui.js'),'utf8').replace('map = L.map(','map = window.testMap = L.map(')
         .replace('busLayer = L.markerClusterGroup(','busLayer = window.testBuses = L.markerClusterGroup(')
         .replace('function openStop(uid) {','ui.testOpenStop = openStop; function openStop(uid) {')}));
-    await page.goto('http://localhost:8787/');await page.waitForSelector('.splash.gone');
+    await page.goto('http://localhost:8787/');await page.waitForSelector('.splash.gone',{state:'attached'});
     assert.equal(await page.locator('html').getAttribute('lang'),'ru');
     assert.equal(await page.locator('#barTitle').innerText(),'Город в движении');
 
@@ -77,7 +77,7 @@ const fs=require('fs'),path=require('path'),assert=require('assert');
     await page.locator('[data-language="en"]').click();
     assert((await page.locator('#sheetBody').innerText()).includes('2 stops away'));
     assert.equal(await page.evaluate(()=>apiCalls),0);
-    await page.reload();await page.waitForSelector('.splash.gone');
+    await page.reload();await page.waitForSelector('.splash.gone',{state:'attached'});
     assert.equal(await page.locator('html').getAttribute('lang'),'en');
     assert.equal(await page.locator('#barTitle').innerText(),'The city in motion');
     assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('language'))),'en');

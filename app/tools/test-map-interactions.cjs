@@ -12,7 +12,9 @@ const fs = require('fs'), path = require('path'), assert = require('assert');
       fs.readFileSync(path.join(__dirname, '../www/js/ui.js'), 'utf8').replace('map = L.map(', 'map = window.testMap = L.map(')
         .replace('busLayer = L.markerClusterGroup(', 'busLayer = window.testBuses = L.markerClusterGroup(') }));
     await page.goto('http://localhost:8787/');
-    await page.waitForSelector('.splash.gone', { timeout: 45000 });
+    await page.waitForSelector('.splash.gone', { state: 'attached', timeout: 45000 });
+    assert.equal(await page.locator('#splash').evaluate(e => getComputedStyle(e).display), 'none', 'Dismissed splash leaves the compositing tree');
+    assert.equal(await page.locator('#status').evaluate(e => getComputedStyle(e).backdropFilter), 'none', 'WebGL map has no backdrop-filter overlay');
     assert.equal(await page.locator('#mapSearch').count(), 0);
     await page.locator('#statusToggle').click();
     await page.waitForTimeout(350);

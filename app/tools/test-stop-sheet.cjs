@@ -7,7 +7,7 @@ const fs=require('fs'),path=require('path'),assert=require('assert');
     const errors=[];page.on('pageerror',e=>errors.push(e.message));
     await require('./offline-ui.cjs')(page);
     await page.route('**/js/ui.js',route=>route.fulfill({contentType:'application/javascript',body:fs.readFileSync(path.join(__dirname,'../www/js/ui.js'),'utf8').replace('function openStop(uid) {','ui.testOpenStop = openStop; function openStop(uid) {')}));
-    await page.goto('http://localhost:8787/');await page.waitForSelector('.splash.gone',{timeout:45000});
+    await page.goto('http://localhost:8787/');await page.waitForSelector('.splash.gone',{state:'attached',timeout:45000});
     await page.evaluate(()=>{T.model.active=false;T.model.snapshot=()=>[];T.model.arrivals=async()=>({at:Date.now(),list:Array.from({length:24},(_,i)=>({base:String(i+1),line:String(i+1),kind:'sched',dest:'NOVO NASELJE',dep:'21:10',eta:60*(i+1)}))});});
     const cdp=await page.context().newCDPSession(page);
     async function swipe(x,y,dy,cancel=false){
