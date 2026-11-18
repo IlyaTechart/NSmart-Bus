@@ -6,7 +6,7 @@ This repository is a fork of Paul’s [katurov/NSBusTablica](https://github.com/
 
 Trecker NS helps you see where a bus is, choose a route, and find out when transport will arrive at your stop. The app uses NSmart data and the official GSP Novi Sad timetable. The interface is available in Russian and English, while route and stop names are preserved from their sources.
 
-[**Download APK 1.11**](https://github.com/IlyaTechart/NSmart-Bus/releases/download/v1.11/Trecker.apk) · [All releases](https://github.com/IlyaTechart/NSmart-Bus/releases)
+[**Download APK 1.12**](https://github.com/IlyaTechart/NSmart-Bus/releases/download/v1.12/Trecker.apk) · [All releases](https://github.com/IlyaTechart/NSmart-Bus/releases)
 
 <p>
   <img src="docs/images/map.png" width="260" alt="Novi Sad bus map">

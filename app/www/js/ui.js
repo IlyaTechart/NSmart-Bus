@@ -205,18 +205,23 @@
         m._it = it;
         m.on('click', function () {
           selectVehicle(m._it);
-          openPopupId = it.id;
           m._popupContent = popupContent(m._it);
           m.bindPopup(m._popupContent, { autoPan: true, offset: [0, -15], maxWidth: Math.min(300, window.innerWidth - 64), autoPanPaddingTopLeft: [16, 190], autoPanPaddingBottomRight: [16, 270] }).openPopup();
+          openPopupId = it.id;
           updatePopup(m, m._it);
         });
-        m.on('popupclose', function () { if (openPopupId === it.id) openPopupId = null; });
+        m.on('popupclose', function () {
+          if (openPopupId !== it.id) return;
+          openPopupId = null;
+          m.unbindPopup();
+          setTimeout(tick, 0);
+        });
         m.addTo(busLayer);
         markers[it.id] = m;
       } else {
-        // setLatLng emits a move event even for identical coordinates. That event
-        // removes and reinserts the marker in MarkerCluster, causing flicker.
-        if (m.getLatLng().distanceTo([it.la, it.lo]) > 1) m.setLatLng([it.la, it.lo]);
+        // Moving a clustered marker reinserts it and its popup. Keep the selected
+        // marker still while its popup is open; closing catches up on the next tick.
+        if (openPopupId !== it.id && m.getLatLng().distanceTo([it.la, it.lo]) > 1) m.setLatLng([it.la, it.lo]);
         if (m._html !== html) {
           m.setIcon(L.divIcon({ className: 'bus-icon vehicle-hit', html: html, iconSize: [56, 48], iconAnchor: [28, 44] }));
           m.setZIndexOffset(it.kind === 'gps' ? 300 : it.kind === 'est' ? 200 : 0);

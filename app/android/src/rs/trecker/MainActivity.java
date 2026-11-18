@@ -65,7 +65,7 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(true);
         s.setBuiltInZoomControls(false);
         s.setSupportZoom(false);
-        s.setUserAgentString(s.getUserAgentString() + " Trecker/1.11");
+        s.setUserAgentString(s.getUserAgentString() + " Trecker/1.12");
         web.addJavascriptInterface(new Net(), "AndroidNet");
         web.setWebViewClient(new WebViewClient() {
             @Override
@@ -176,7 +176,7 @@ public class MainActivity extends Activity {
                     c.setRequestMethod(method);
                     c.setConnectTimeout(Math.min(timeoutMs, 15000));
                     c.setReadTimeout(timeoutMs);
-                    c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) Trecker/1.11");
+                    c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) Trecker/1.12");
                     c.setRequestProperty("Accept-Language", "sr,en;q=0.8");
                     JSONObject h = new JSONObject(headersJson == null || headersJson.isEmpty() ? "{}" : headersJson);
                     Iterator<String> it = h.keys();

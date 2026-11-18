@@ -9,7 +9,8 @@ const fs=require('fs'),path=require('path'),assert=require('assert');
       fs.readFileSync(path.join(__dirname,'../www/js/ui.js'),'utf8').replace('map = L.map(','map = window.testMap = L.map(')
         .replace('busLayer = L.markerClusterGroup(','busLayer = window.testBuses = L.markerClusterGroup(')
         .replace('routeLayer = L.layerGroup(','routeLayer = window.testRoutes = L.layerGroup(')
-        .replace('stopLayer = L.layerGroup(','stopLayer = window.testStops = L.layerGroup(')}));
+        .replace('stopLayer = L.layerGroup(','stopLayer = window.testStops = L.layerGroup(')
+        .replace('let openPopupId = null;','let openPopupId = null; window.testPopupId = () => openPopupId;')}));
     await page.goto('http://localhost:8787/');await page.waitForSelector('.splash.gone',{state:'attached'});
     const raw=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/raw_6712_live_far.json'),'utf8'));
     await page.evaluate(raw=>{
@@ -25,6 +26,7 @@ const fs=require('fs'),path=require('path'),assert=require('assert');
     await page.waitForTimeout(1300);
     async function tapBus(id){
       // Real touch at the chosen individual marker, not a direct selection call.
+      await page.waitForFunction(id=>{const m=testBuses.getLayers().find(m=>m._it.id===id);return m&&m.getElement();},id);
       const p=await page.evaluate(id=>{const e=testBuses.getLayers().find(m=>m._it.id===id).getElement();const r=e.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};},id);
       await page.touchscreen.tap(p.x,p.y);await page.waitForSelector('.route-overview');
     }
@@ -51,7 +53,24 @@ const fs=require('fs'),path=require('path'),assert=require('assert');
     await page.evaluate(()=>{busItems[0].age=3;});await page.waitForTimeout(1200);
     assert((await page.locator('[data-popup-age]').innerText()).includes('3'),'GPS age keeps updating');
     assert(await page.evaluate(()=>stablePopupTitle===document.querySelector('.pop-title')&&stableRouteButton===document.querySelector('.route-overview')),'Tick updates only the GPS age, not the whole popup DOM');
+    await page.evaluate(()=>{
+      const m=testBuses.getLayers().find(m=>m._it.id==='bus-a'),p=m.getLatLng();
+      window.frozenPosition={lat:p.lat,lng:p.lng};busItems[0].la+=.0008;busItems[0].lo+=.0008;
+    });
+    await page.waitForTimeout(1200);
+    assert(await page.evaluate(()=>{
+      const m=testBuses.getLayers().find(m=>m._it.id==='bus-a'),p=m.getLatLng();
+      return p.lat===frozenPosition.lat&&p.lng===frozenPosition.lng&&testMap.hasLayer(m.getPopup());
+    }),'A moving bus and its open popup stay frozen at the original position');
+    await page.locator('.leaflet-popup-close-button').click();await page.waitForTimeout(1200);
+    assert(await page.evaluate(()=>{
+      const m=testBuses.getLayers().find(m=>m._it.id==='bus-a');
+      return m.getLatLng().distanceTo([busItems[0].la,busItems[0].lo])<1;
+    }),'Closing the popup immediately catches the marker up to its latest calculated position');
+    await tapBus('bus-a');await assertRoute('a');await page.waitForTimeout(1200);
+    assert(await page.evaluate(()=>{const m=testBuses.getLayers().find(m=>m._it.id==='bus-a');return testPopupId()==='bus-a'&&testMap.hasLayer(m.getPopup());}),'Reopening after a position update keeps the new popup active');
     await page.locator('[data-route-overview]').click();await page.waitForTimeout(700);await assertRoute('a');
+    await page.evaluate(()=>{busItems[0].la=frozenPosition.lat;busItems[0].lo=frozenPosition.lng;});await page.waitForTimeout(1200);
     await page.locator('#focusClear').click();assert.equal(await page.evaluate(()=>testRoutes.getLayers().length),0);
     await page.evaluate(()=>{testMap.setView([busItems[1].la,busItems[1].lo],17);});await page.waitForTimeout(700);
     await tapBus('bus-b');await assertRoute('b');assert((await page.locator('#focusName').innerText()).includes('CENTAR'));
