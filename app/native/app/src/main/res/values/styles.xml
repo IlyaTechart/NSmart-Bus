@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.Trecker" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#176655</item>
+        <item name="android:statusBarColor">#fafbf8</item>
+        <item name="android:navigationBarColor">#ffffff</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowBackground">#f5f7f4</item>
+    </style>
+</resources>

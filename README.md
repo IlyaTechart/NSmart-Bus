@@ -6,7 +6,9 @@ This repository is a fork of Paul’s [katurov/NSBusTablica](https://github.com/
 
 Trecker NS helps you see where a bus is, choose a route, and find out when transport will arrive at your stop. The app uses NSmart data and the official GSP Novi Sad timetable. The interface is available in Russian and English, while route and stop names are preserved from their sources.
 
-[**Download APK 1.12**](https://github.com/IlyaTechart/NSmart-Bus/releases/download/v1.12/Trecker.apk) · [All releases](https://github.com/IlyaTechart/NSmart-Bus/releases)
+[**Download APK 2.0**](https://github.com/IlyaTechart/NSmart-Bus/releases/download/v2.0/Trecker.apk) · [All releases](https://github.com/IlyaTechart/NSmart-Bus/releases)
+
+Screenshots from version 1.12.
 
 <p>
   <img src="docs/images/map.png" width="260" alt="Novi Sad bus map">
@@ -22,10 +24,10 @@ Trecker NS helps you see where a bus is, choose a route, and find out when trans
 - Three position types: fresh GPS, an estimate based on the last GPS fix, and a timetable-based prediction.
 - Estimated markers move along the road network between stops while preserving their ETA. Road geometry is bundled into the APK and does not require a separate routing server.
 - A “GPS only” filter and a button to go to your own location.
-- Clustering of nearby buses with their count and route numbers. Tapping a cluster zooms in; at high zoom levels, overlapping markers spread out.
-- A collapsible “On the map now” card: drag its top edge down or tap the arrow. Swipe up to expand it again.
+- Nearby buses appear in clusters. Tap a cluster to zoom in.
+- Tap the map status card to show or hide the position counts.
 - Stop arrivals when you tap a stop circle, plus departure timetables from terminals.
-- The stop panel closes with a large close button or a downward swipe from its top edge. You can also drag the list itself down when it is scrolled to the top.
+- Close the stop panel with its close button or Android Back.
 - Caching of the stop catalog, discovered routes, and timetables.
 
 ## Installation
@@ -34,7 +36,7 @@ Trecker NS helps you see where a bus is, choose a route, and find out when trans
 2. Open the APK on Android and, if prompted, allow installation from the browser or file manager you used.
 3. Launch the app with an internet connection. Location permission is needed only for the “Where am I” button.
 
-**Android 7.0 or newer is required.** The map and current arrivals are downloaded from the network; this is not a fully offline app. The vector map requires a WebView with WebGL support; without it, a raster map is used as a fallback.
+**Android 7.0 or newer is required.** The map and current arrivals are downloaded from the network; this is not a fully offline app.
 
 ## What the colors mean
 
@@ -50,7 +52,7 @@ The timetable shows **departure from the terminal**, not a promised arrival time
 
 ### Conservative NSmart polling
 
-Since version 1.9, startup is faster: the first GPS request to a major stop in the visible area is sent before the basemap is initialized, and data is displayed as soon as the response arrives. Updating the bundled/saved catalog waits for the first four GPS requests. Initial stops are selected to cover different local lines. Saved rate limits and error backoff periods are also respected during startup.
+Since version 1.9, startup is faster: the first GPS request to a major stop in the visible area is sent before the basemap is initialized, and data is displayed as soon as the response arrives. The app schedules a stale catalog refresh after startup polling begins. Initial stops are selected to cover different local lines. Saved rate limits and error backoff periods are also respected during startup.
 
 Since version 1.8, a shared limit of **20 network requests in any 60 seconds** applies, with at least **3 seconds** between requests and only one request in flight. It is shared by the map, manual refresh, the stop panel, and catalog downloads; moving the map does not reset it. Budget history and backoff periods are saved locally across app restarts.
 
@@ -60,70 +62,50 @@ After HTTP 403/429, the app pauses for at least **5 minutes**, increasing the pa
 
 This is our load-reduction policy, not a published NSmart quota. The budget applies per app instance, not per external IP address: users on the same Wi-Fi/mobile network may share an address. In the APK, requests are sent from the client device. The browser `devserver` is a local development tool: its proxy sends requests from the computer running it.
 
-Tapping a bus highlights the route and stops for its exact direction and line variant with a bright green line and a soft halo. In its card, tap “Show full route.” The close button above the map clears the selection; if a line was selected beforehand, its routes are restored. Selecting a bus does not send additional NSmart requests. An unavailable route is never replaced with another line, and sections without road geometry are shown as approximate dashed segments.
+Tapping a bus highlights the route and stops for its exact direction and line variant with a bright green line and a soft halo. In its card, tap “Show full route.” The close button above the map clears the selection; if a line was selected beforehand, its routes are restored. Selecting a bus does not send additional NSmart requests. An unavailable route is never replaced with another line, and sections without road geometry use approximate straight segments.
 
 Road snapping covers Novi Sad and nearby areas. It uses the stop sequence and the OpenStreetMap road network rather than official bus route geometry. Outside the coverage area, or when no suitable path is available, approximate interpolation remains; this is noted in the bus popup. Special bus exceptions and all turn restrictions are absent from the vector data used. For details about the data and how to update it, see [`app/www/data/ROADS.md`](app/www/data/ROADS.md).
 
 ## Development
 
-The app consists of HTML/CSS/JavaScript running in an Android WebView and a small Java wrapper. The wrapper performs network requests to NSmart/GSP, handles location permission, and supports the system Back button. No server is required for the APK to work.
+Trecker NS 2.0 is a native Android app. Kotlin implements the screens, networking, permissions and MapLibre Native map. Rust owns NSmart/GSP parsing, vehicle positions, timetable matching, road routing and request limits; Kotlin calls it through JNI. The APK contains no WebView or JavaScript runtime.
 
 ```text
 app/
-  www/                  interface, map, movement model, and bundled libraries
-  android/              Java wrapper, AndroidManifest, and resources
-  tools/                local server, tests, and test data
-  build.ps1             APK build and signing
-docs/images/            interface screenshots
+  native/               Gradle project and Kotlin Android app
+  rust/                 Rust JNI library and host-side tests
+  www/                  legacy web implementation and reference data
+  tools/                test fixtures and native asset preparation
+  build.ps1             Rust + Kotlin APK build and signing
 ```
 
-### Running in a browser
-
-Node.js 18 or newer is required:
-
-```sh
-cd app
-npm start
-```
-
-Open `http://localhost:8787`. The local server proxies requests to the data sources, replacing the Android bridge. Run it only in a trusted local environment. To view an individual route, use `http://localhost:8787/#focus=9`.
+The bundled station catalogue, learned routes and road graph are generated from `www/data` by `tools/prepare-native.cjs`. They are build artifacts and are not duplicated in Git under `native/app/src/main/assets`.
 
 ### Checks
 
-The core tests require neither npm packages nor network access:
+Rust tests use saved NSmart/GSP responses and require no network access:
 
 ```sh
-cd app
-npm test
+node app/tools/prepare-native.cjs
+cargo test --locked --manifest-path app/rust/Cargo.toml
 ```
 
-For UI checks, install the dependencies and Chrome, then start the local server in a separate terminal:
-
-```sh
-npm ci
-npm start
-```
-
-In another terminal, from the `app` directory:
-
-```sh
-npm run test:ui
-npm run preview
-```
-
-If Chrome is installed in a nonstandard location, set the `CHROME_PATH` environment variable to its executable. The UI tests cover touch gestures, panels, bus retention while zooming, cluster expansion, the GPS filter, repeated stop refreshes, and Russian/English switching with persistence. Automated tests do not poll NSmart/GSP: they use mock responses and, for rate checks, a virtual clock. These data are not included in the app. The separate `preview` command uses network sources and saves screenshots.
+The tests cover response parsing, real route projection, repeated GPS observations, timetable parsing, Serbian holidays, rolling request limits, backoff and loading the bundled station/route/road data. The legacy web implementation can still be checked with `npm test` and `npm run test:ui` from `app`.
 
 ### Building the APK on Windows
 
-JDK 17 and an Android SDK with `platforms;android-34` and `build-tools;34.0.0` are required. Android Studio and Gradle are not necessary.
+Required tools: JDK 17, Node.js 18+, Rust with `aarch64-linux-android`, `armv7-linux-androideabi` and `x86_64-linux-android` targets, `cargo-ndk`, Gradle 8.9, Android SDK 34/build-tools 34 and NDK 27.2.12479018.
 
 Expected tool directory structure:
 
 ```text
 trecker-tools/
   jdk/bin/java.exe
+  node/node.exe
+  gradle-8.9/bin/gradle.bat
   sdk/platforms/android-34/android.jar
   sdk/build-tools/34.0.0/
+  sdk/ndk/27.2.12479018/
 ```
 
 ```powershell
@@ -131,9 +113,9 @@ $env:TRECKER_TOOLS = 'C:\path\to\trecker-tools'
 powershell -ExecutionPolicy Bypass -File app/build.ps1
 ```
 
-The result is `Trecker.apk` in the project root. Without `TRECKER_TOOLS`, the script uses the `trecker-tools` folder in the current user’s profile.
+The script prepares bundled data, compiles Rust for ARM64, ARMv7 and x86_64, builds Kotlin/MapLibre with Gradle, aligns and signs the APK. The result is `Trecker.apk` in the project root. `GRADLE_HOME` can override the Gradle location.
 
-The `app/android/trecker.keystore` signing key is not stored in the repository. If it is absent, the script creates a local development key. To use a key stored elsewhere, set `TRECKER_KEYSTORE` to its path before running the script. An APK signed with a different key cannot be installed over the release version as an update. Keep your key for subsequent builds of your own.
+The `app/android/trecker.keystore` signing key is not stored in the repository. The script checks the release certificate before copying the APK. To use the release key stored elsewhere, set `TRECKER_KEYSTORE` to its path before running the script. An APK signed with a different key cannot be installed over the release version as an update.
 
 ## Sources and acknowledgments
 
@@ -143,4 +125,4 @@ The `app/android/trecker.keystore` signing key is not stored in the repository. 
 - [Leaflet](https://leafletjs.com/), [MapLibre GL JS](https://maplibre.org/), Leaflet.markercluster, and Manrope — libraries and the font. Licenses for bundled components are in `app/www/lib/`.
 - [katurov/NSBusTablica](https://github.com/katurov/NSBusTablica) — approaches to working with NSmart, handling stale coordinates, and making predictions; the provenance of the test data is described in `app/tools/fixtures/README.md`.
 
-This is an independent project, not an official NSmart or GSP Novi Sad app. Data availability and prediction accuracy depend on external services. /Android
+This is an independent project, not an official NSmart or GSP Novi Sad app. Data availability and prediction accuracy depend on external services.

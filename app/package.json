@@ -1,6 +1,6 @@
 {
   "name": "nsmart-bus",
-  "version": "1.12.0",
+  "version": "2.0.0",
   "private": true,
   "description": "Trecker NS: a Novi Sad bus map and timetable for Android",
   "scripts": {

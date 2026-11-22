@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- adaptive icon foreground: a bus, inside the 66dp safe zone of the 108dp canvas -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFFFFF" android:pathData="M38,32h32a8,8 0,0 1,8 8v26a4,4 0,0 1,-4 4h-40a4,4 0,0 1,-4 -4v-26a8,8 0,0 1,8 -8z"/>
+    <path android:fillColor="#0B5D8F" android:pathData="M37,39h34v14h-34z"/>
+    <path android:fillColor="#0B5D8F" android:pathData="M42,62m-3.5,0a3.5,3.5 0,1 1,7 0a3.5,3.5 0,1 1,-7 0"/>
+    <path android:fillColor="#0B5D8F" android:pathData="M66,62m-3.5,0a3.5,3.5 0,1 1,7 0a3.5,3.5 0,1 1,-7 0"/>
+    <path android:fillColor="#FFFFFF" android:pathData="M36,70h9v6a2,2 0,0 1,-2 2h-5a2,2 0,0 1,-2 -2z"/>
+    <path android:fillColor="#FFFFFF" android:pathData="M63,70h9v6a2,2 0,0 1,-2 2h-5a2,2 0,0 1,-2 -2z"/>
+    <path android:fillColor="#5BE39A" android:pathData="M74,26m-6,0a6,6 0,1 1,12 0a6,6 0,1 1,-12 0"/>
+</vector>

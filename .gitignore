@@ -48,6 +48,11 @@ secrets.toml
 
 # Generated artifacts are distributed via GitHub Releases.
 app/build/
+app/native/.gradle/
+app/native/**/build/
+app/native/app/src/main/assets/
+app/native/app/src/main/jniLibs/
+app/rust/target/
 *.apk
 *.idsig
 node_modules/
