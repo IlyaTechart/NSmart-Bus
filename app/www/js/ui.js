@@ -350,9 +350,10 @@
     routes.forEach(function (r) {
       const pts = r.s.filter(function (x) { return x[1] != null; }).map(function (x) { return [x[1], x[2]]; });
       pts.forEach(function (p) { bounds.push(p); });
-      const segments = [];
-      const approximate = [];
-      for (let i = 1; i < pts.length; i++) {
+      const geometry = M.geometry && M.geometry(r.k);
+      const segments = geometry ? geometry.segments : [];
+      const approximate = geometry && selectedVehicle ? geometry.approximate : [];
+      if (!geometry) for (let i = 1; i < pts.length; i++) {
         const path = T.roads && T.roads.path({la:pts[i-1][0],lo:pts[i-1][1]}, {la:pts[i][0],lo:pts[i][1]});
         if (path) segments.push(T.roads.coordinates(path));
         else if (!T.roads) segments.push([pts[i-1],pts[i]]);

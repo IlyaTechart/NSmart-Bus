@@ -17,7 +17,7 @@ object Network {
             connection.requestMethod = method
             connection.connectTimeout = minOf(timeout, 15_000)
             connection.readTimeout = timeout
-            connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) Trecker/2.0")
+            connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) Trecker/2.1")
             connection.setRequestProperty("Accept-Language", "sr,en;q=0.8")
             headers.forEach(connection::setRequestProperty)
             if (method == "POST") {

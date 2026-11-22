@@ -32,21 +32,21 @@ class TreckerRepository(context: Context) {
     @Volatile private var scheduleIndex: JSONObject? = null
     private var scheduleLoading = false
 
-    var stations: Map<String, Station> = emptyMap(); private set
+    private var hasStations = false
+    @Volatile var scheduleError = ""; private set
     var focus: String? = null; private set
     var city = prefs.getBoolean("city", true)
     var suburban = prefs.getBoolean("suburban", true)
     @Volatile var active = false
-    var lastOkAt = 0L
-    var lastError = ""
+    @Volatile var lastOkAt = 0L
+    @Volatile var lastError = ""
     var viewport: JSONArray = JSONArray()
-    var onUpdate: () -> Unit = {}
+    var onUpdate: (String) -> Unit = {}
 
     init {
-        I18n.english = prefs.getString("language", "ru") == "en"
         val savedStations = prefs.getString("stations", null)
         val stationJson = savedStations ?: readAsset("stations.json")
-        stations = parseStations(JSONObject(stationJson))
+        hasStations = JSONObject(stationJson).length() > 0
         val routes = prefs.getString("routes", null) ?: readAsset("routes.json")
         engine = RustCore.nativeCreate(stationJson, routes, readAsset("roads.json"))
         prefs.getString("gate", null)?.let { RustCore.nativeGateRestore(gate, it) }
@@ -57,21 +57,21 @@ class TreckerRepository(context: Context) {
     private fun readAsset(name: String): String = app.assets.open(name).bufferedReader().use { it.readText() }
     private fun now(): Long = System.currentTimeMillis()
     private fun saveGate() = prefs.edit().putString("gate", RustCore.nativeGateState(gate)).apply()
-    private fun notifyUpdate() = main.post { if (!closed.get()) onUpdate() }
+    private fun notifyUpdate() = main.post { if (!closed.get()) onUpdate("poll") }
 
     fun setLanguage(english: Boolean) {
-        I18n.english = english; prefs.edit().putString("language", if (english) "en" else "ru").apply()
+        prefs.edit().putString("language", if (english) "en" else "ru").apply()
     }
     fun setCategories(city: Boolean, suburban: Boolean) {
         this.city = city; this.suburban = suburban
-        prefs.edit().putBoolean("city", city).putBoolean("suburban", suburban).apply(); queue.clear(); notifyUpdate()
+        prefs.edit().putBoolean("city", city).putBoolean("suburban", suburban).apply(); queue.clear(); cycleStarted = 0; notifyUpdate()
     }
     fun setFocus(base: String?) { focus = base; queue.clear(); notifyUpdate() }
 
     fun start() {
         if (closed.get() || active) return
         active = true
-        if (stations.isEmpty()) refreshStations()
+        if (!hasStations) refreshStations()
         else if (now() - stationsAt > 14 * 86_400_000L) main.postDelayed(refreshTask, 12_000)
         pollNext()
         scheduleExecutor.execute { loadScheduleBackground() }
@@ -181,14 +181,14 @@ class TreckerRepository(context: Context) {
                 if (response.status == 200) {
                     val compact = RustCore.nativeParseStations(response.text)
                     RustCore.nativeSetStations(engine, compact); RustCore.nativeGateSuccess(gate)
-                    val updated = parseStations(JSONObject(compact)); val receivedAt = now()
+                    val receivedAt = now()
                     prefs.edit().putString("stations", compact).putLong("stations_at", receivedAt).apply()
                     main.post {
                         if (!closed.get()) {
-                            stations = updated
+                            hasStations = true
                             stationsAt = receivedAt
                             queue.clear()
-                            onUpdate()
+                            onUpdate("stations")
                         }
                     }
                 } else {
@@ -203,15 +203,13 @@ class TreckerRepository(context: Context) {
         }
     }
 
-    fun snapshot(): List<BusItem> = parseBusItems(JSONArray(RustCore.nativeSnapshot(engine, now(), focus.orEmpty(), city, suburban)))
-    fun lines(): JSONArray = JSONArray(RustCore.nativeLines(engine))
-    fun route(key: String): RouteData? {
-        val raw = RustCore.nativeRoute(engine, key)
-        return if (raw == "null") null else parseRoute(JSONObject(raw), stations)
-    }
-    fun routesOf(base: String): List<RouteData> = JSONArray(RustCore.nativeRoutes(engine, base, now())).let { array ->
-        List(array.length()) { parseRoute(array.getJSONObject(it), stations) }
-    }
+    fun snapshot(base: String, city: Boolean, suburban: Boolean) =
+        RustCore.nativeSnapshot(engine, now(), base, city, suburban)
+    fun catalog() = RustCore.nativeCatalog(engine)
+    fun routes() = RustCore.nativeExportRoutes(engine)
+    fun geometry(key: String) = RustCore.nativeRoute(engine, key)
+    fun gateState() = RustCore.nativeGateState(gate)
+
     fun saveRoutes() {
         if (engine != 0L) prefs.edit().putString("routes", RustCore.nativeExportRoutes(engine)).apply()
     }
@@ -303,9 +301,9 @@ class TreckerRepository(context: Context) {
                 days += currentDayType(calendar.timeInMillis)
             }
             for (dan in days) for (rv in listOf("rvg", "rvp")) ensureTableBackground(rv, dan, false)
-            lastError = ""
-        } catch (error: Exception) { lastError = error.message.orEmpty() }
-        finally { scheduleLoading = false }
+            scheduleError = ""
+        } catch (error: Exception) { scheduleError = error.message.orEmpty() }
+        finally { scheduleLoading = false; main.post { if (!closed.get()) onUpdate("schedule") } }
     }
 
     private fun restoreTimetables() {

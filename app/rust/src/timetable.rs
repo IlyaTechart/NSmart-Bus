@@ -205,15 +205,23 @@ pub fn destination(header: &str) -> Option<String> {
 
 pub fn expand_departures(departures: &[Departure]) -> Vec<(i64, i64, i64, Option<String>)> {
     let night = !departures.is_empty()
-        && departures
-            .iter()
-            .all(|d| d.t[..2].parse::<i64>().unwrap_or(0) < 5);
+        && departures.iter().all(|d| {
+            d.t.get(..2)
+                .and_then(|h| h.parse::<i64>().ok())
+                .unwrap_or(0)
+                < 5
+        });
     let mut previous = None;
     let mut offset = 0;
     let mut out = Vec::new();
     for departure in departures {
-        let hour = departure.t[..2].parse().unwrap_or(0);
-        let minute = departure.t[3..5].parse().unwrap_or(0);
+        let Some((hour, minute)) = departure
+            .t
+            .split_once(':')
+            .and_then(|(h, m)| Some((h.parse::<i64>().ok()?, m.parse::<i64>().ok()?)))
+        else {
+            continue;
+        };
         if previous.is_some_and(|p| hour < p) {
             offset = 1;
         }

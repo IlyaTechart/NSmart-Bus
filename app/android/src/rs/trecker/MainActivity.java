@@ -11,7 +11,6 @@ import android.os.Bundle;
 import android.view.View;
 import android.view.Window;
 import android.webkit.GeolocationPermissions;
-import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -20,27 +19,9 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
-import org.json.JSONObject;
-
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.util.Iterator;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-
-/**
- * The whole app is a web page (assets/www) in a WebView. Java only:
- *  - performs HTTP requests for the page (AndroidNet.request): nsmart/gspns send no CORS headers, so a page could
- *    not read them itself; also allows plain HTTP to gspns.rs;
- *  - asks for the location permission ("where am I" button);
- *  - routes the back button to the page and pauses timers in the background.
- */
 public class MainActivity extends Activity {
     private WebView web;
-    private final ExecutorService pool = Executors.newFixedThreadPool(4);
+    private WebModel model;
     private GeolocationPermissions.Callback geoCallback;
     private String geoOrigin;
 
@@ -65,8 +46,9 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(true);
         s.setBuiltInZoomControls(false);
         s.setSupportZoom(false);
-        s.setUserAgentString(s.getUserAgentString() + " Trecker/1.12");
-        web.addJavascriptInterface(new Net(), "AndroidNet");
+        s.setUserAgentString(s.getUserAgentString() + " Trecker/2.1");
+        model = new WebModel(this, web);
+        web.addJavascriptInterface(model, "Transit");
         web.setWebViewClient(new WebViewClient() {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest req) {
@@ -135,6 +117,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        model.setForeground(false);
         web.onPause();
         web.pauseTimers();
     }
@@ -142,74 +125,17 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        model.setForeground(true);
         web.onResume();
         web.resumeTimers();
     }
 
     @Override
     protected void onDestroy() {
-        pool.shutdownNow();
+        web.removeJavascriptInterface("Transit");
+        model.close();
         web.destroy();
         super.onDestroy();
     }
 
-    private void deliver(String id, int status, String text, String retryAfter) {
-        final String js = "__httpDone(" + JSONObject.quote(id) + "," + status + "," + JSONObject.quote(text) + ","
-                + JSONObject.quote(retryAfter == null ? "" : retryAfter) + ")";
-        runOnUiThread(() -> { if (web != null && !isDestroyed()) web.evaluateJavascript(js, null); });
-    }
-
-    /** window.AndroidNet in the page. */
-    private class Net {
-        @JavascriptInterface
-        public void request(final String id, final String method, final String url, final String body,
-                            final String headersJson, final int timeoutMs) {
-            pool.submit(() -> {
-                HttpURLConnection c = null;
-                try {
-                    URL target = new URL(url);
-                    String host = target.getHost();
-                    if (!("online.nsmart.rs".equals(host) || "gspns.rs".equals(host) || "www.gspns.rs".equals(host))
-                            || !("https".equals(target.getProtocol()) || "http".equals(target.getProtocol())))
-                        throw new SecurityException("Unsupported data source");
-                    c = (HttpURLConnection) target.openConnection();
-                    c.setRequestMethod(method);
-                    c.setConnectTimeout(Math.min(timeoutMs, 15000));
-                    c.setReadTimeout(timeoutMs);
-                    c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) Trecker/1.12");
-                    c.setRequestProperty("Accept-Language", "sr,en;q=0.8");
-                    JSONObject h = new JSONObject(headersJson == null || headersJson.isEmpty() ? "{}" : headersJson);
-                    Iterator<String> it = h.keys();
-                    while (it.hasNext()) {
-                        String k = it.next();
-                        c.setRequestProperty(k, h.getString(k));
-                    }
-                    if ("POST".equals(method)) {
-                        c.setDoOutput(true);
-                        byte[] b = (body == null ? "" : body).getBytes("UTF-8");
-                        c.setFixedLengthStreamingMode(b.length);
-                        OutputStream os = c.getOutputStream();
-                        os.write(b);
-                        os.close();
-                    }
-                    int code = c.getResponseCode();
-                    InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();
-                    String text = "";
-                    if (in != null) {
-                        ByteArrayOutputStream out = new ByteArrayOutputStream();
-                        byte[] buf = new byte[16384];
-                        int n;
-                        while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
-                        in.close();
-                        text = out.toString("UTF-8");
-                    }
-                    deliver(id, code, text, c.getHeaderField("Retry-After"));
-                } catch (Throwable e) {
-                    deliver(id, -1, String.valueOf(e.getMessage() != null ? e.getMessage() : e), null);
-                } finally {
-                    if (c != null) c.disconnect();
-                }
-            });
-        }
-    }
 }

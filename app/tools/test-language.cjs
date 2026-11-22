@@ -28,6 +28,7 @@ const fs=require('fs'),path=require('path'),assert=require('assert');
       window.apiCalls=0;T.http=async()=>{apiCalls++;throw Error('Unexpected API request');};
       T.model.lines={14:{base:'14',city:true,variants:['14','14S'],stops:['1','2']}};
       T.model.routes={};
+      T.model.dayTypeFor=()=>'R';
       T.model.ensureTables=async()=>({rv:'rvg',dan:'R',vaziod:'2026-01-01',fetched:Date.now(),
         options:[{value:'14',label:'14 CENTAR'}],lines:{14:{title:'14 CENTAR',directions:[{header:'Smer A: CENTAR',departures:[1,2]}]}}});
     });

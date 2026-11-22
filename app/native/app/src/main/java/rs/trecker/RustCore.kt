@@ -4,6 +4,8 @@ object RustCore {
     init { System.loadLibrary("trecker_core") }
 
     @JvmStatic external fun nativeDayType(timestamp: Long): String
+    @JvmStatic external fun nativeDepartures(raw: String): String
+    @JvmStatic external fun nativeCatalog(handle: Long): String
     @JvmStatic external fun nativeVersion(): String
     @JvmStatic external fun nativeParseStations(raw: String): String
     @JvmStatic external fun nativeSetStations(handle: Long, raw: String): String

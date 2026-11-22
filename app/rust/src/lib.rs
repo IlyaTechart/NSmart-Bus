@@ -83,11 +83,41 @@ pub extern "system" fn Java_rs_trecker_RustCore_nativeDayType(
 }
 
 #[no_mangle]
+pub extern "system" fn Java_rs_trecker_RustCore_nativeDepartures(
+    mut env: JNIEnv,
+    _class: JClass,
+    raw: JString,
+) -> jstring {
+    match json_arg(&mut env, &raw).and_then(|value| {
+        serde_json::from_value::<Vec<timetable::Departure>>(value).map_err(|e| e.to_string())
+    }) {
+        Ok(rows) => json_return(&mut env, json!(timetable::expand_departures(&rows))),
+        Err(error) => fail(&mut env, error),
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_rs_trecker_RustCore_nativeCatalog(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) -> jstring {
+    engine_json(&mut env, handle, |engine| {
+        let tables: HashMap<_, _> = engine
+            .timetables
+            .iter()
+            .map(|(key, table)| (key, json!({"options": table.options})))
+            .collect();
+        Ok(json!({"stations": engine.stations, "lines": engine.lines_json(), "tables": tables}))
+    })
+}
+
+#[no_mangle]
 pub extern "system" fn Java_rs_trecker_RustCore_nativeVersion(
     env: JNIEnv,
     _class: JClass,
 ) -> jstring {
-    env.new_string("Trecker Rust Core 2.0")
+    env.new_string("Trecker Rust Core 2.1")
         .expect("UTF-8")
         .into_raw()
 }

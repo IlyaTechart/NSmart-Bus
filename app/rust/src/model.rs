@@ -606,7 +606,8 @@ impl Engine {
 
     pub fn route_json(&self, key: &str) -> Option<Value> {
         let route = self.routes.get(key)?;
-        let mut shape = Vec::new();
+        let mut segments = Vec::new();
+        let mut approximate = Vec::new();
         for pair in route.s.windows(2) {
             let (a, b) = (&pair[0], &pair[1]);
             let (Some(a_la), Some(a_lo), Some(b_la), Some(b_lo)) = (a.la, a.lo, b.la, b.lo) else {
@@ -614,16 +615,13 @@ impl Engine {
             };
             if let Some(roads) = &self.roads {
                 if let Some(path) = roads.path(a_la, a_lo, b_la, b_lo) {
-                    shape.extend(roads.coordinates(&path));
+                    segments.push(roads.coordinates(&path));
                     continue;
                 }
             }
-            shape.push([a_la, a_lo]);
-            shape.push([b_la, b_lo]);
+            approximate.push([[a_la, a_lo], [b_la, b_lo]]);
         }
-        Some(
-            json!({"route": route, "shape": shape, "stops": route.s.iter().map(|s| json!({"id": s.id, "la": s.la, "lo": s.lo, "name": self.station_name(&s.id)})).collect::<Vec<_>>()}),
-        )
+        Some(json!({"segments": segments, "approximate": approximate}))
     }
 
     pub fn routes_of(&self, base: &str, now: i64) -> Vec<Value> {
@@ -652,7 +650,7 @@ impl Engine {
             .map(|(base, (city, variants, stops))| {
                 let mut variants: Vec<_> = variants.into_iter().collect();
                 variants.sort();
-                json!({"base": base, "city": city, "variants": variants, "stops": stops.len()})
+                json!({"base": base, "city": city, "variants": variants, "stops": stops})
             })
             .collect();
         list.sort_by(|a, b| {

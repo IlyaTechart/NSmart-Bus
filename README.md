@@ -6,15 +6,9 @@ This repository is a fork of Paul’s [katurov/NSBusTablica](https://github.com/
 
 Trecker NS helps you see where a bus is, choose a route, and find out when transport will arrive at your stop. The app uses NSmart data and the official GSP Novi Sad timetable. The interface is available in Russian and English, while route and stop names are preserved from their sources.
 
-[**Download APK 2.0**](https://github.com/IlyaTechart/NSmart-Bus/releases/download/v2.0/Trecker.apk) · [All releases](https://github.com/IlyaTechart/NSmart-Bus/releases)
+[**Download APK 2.1**](https://github.com/IlyaTechart/NSmart-Bus/releases/download/v2.1/Trecker.apk) · [All releases](https://github.com/IlyaTechart/NSmart-Bus/releases)
 
-Screenshots from version 1.12.
-
-<p>
-  <img src="docs/images/map.png" width="260" alt="Novi Sad bus map">
-  <img src="docs/images/map-collapsed.png" width="260" alt="Map with the panel collapsed">
-  <img src="docs/images/route.png" width="260" alt="Selected route">
-</p>
+![Map, side menu and route list in Trecker NS 2.1](docs/images/android-2.1.png)
 
 ## Features
 
@@ -68,13 +62,13 @@ Road snapping covers Novi Sad and nearby areas. It uses the stop sequence and th
 
 ## Development
 
-Trecker NS 2.0 is a native Android app. Kotlin implements the screens, networking, permissions and MapLibre Native map. Rust owns NSmart/GSP parsing, vehicle positions, timetable matching, road routing and request limits; Kotlin calls it through JNI. The APK contains no WebView or JavaScript runtime.
+Trecker NS 2.1 renders the original HTML/CSS interface with Leaflet and MapLibre GL in Android WebView. Kotlin manages data requests and persistence. Rust parses transit data, calculates vehicle positions and arrivals, processes timetables, routes along roads and limits requests. The Android build connects these screens to Rust through a WebView adapter and JNI.
 
 ```text
 app/
   native/               Gradle project and Kotlin Android app
   rust/                 Rust JNI library and host-side tests
-  www/                  legacy web implementation and reference data
+  www/                  shared interface, browser model and reference data
   tools/                test fixtures and native asset preparation
   build.ps1             Rust + Kotlin APK build and signing
 ```
@@ -113,7 +107,7 @@ $env:TRECKER_TOOLS = 'C:\path\to\trecker-tools'
 powershell -ExecutionPolicy Bypass -File app/build.ps1
 ```
 
-The script prepares bundled data, compiles Rust for ARM64, ARMv7 and x86_64, builds Kotlin/MapLibre with Gradle, aligns and signs the APK. The result is `Trecker.apk` in the project root. `GRADLE_HOME` can override the Gradle location.
+The script prepares bundled data, compiles Rust for ARM64, ARMv7 and x86_64, packages the WebView interface with Gradle, aligns and signs the APK. The result is `Trecker.apk` in the project root. `GRADLE_HOME` can override the Gradle location.
 
 The `app/android/trecker.keystore` signing key is not stored in the repository. The script checks the release certificate before copying the APK. To use the release key stored elsewhere, set `TRECKER_KEYSTORE` to its path before running the script. An APK signed with a different key cannot be installed over the release version as an update.
 
